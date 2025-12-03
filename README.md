@@ -21,8 +21,18 @@ LangGraph agent for Vibe Trade.
    ```
    - Get your LangSmith API key from https://smith.langchain.com/
    - Get your OpenAI API key from https://platform.openai.com/api-keys
-   - `MCP_SERVER_URL` points to your local MCP server (default: http://localhost:8080/mcp)
-   - `MCP_AUTH_TOKEN` is optional, only needed if your MCP server requires authentication
+   - `MCP_SERVER_URL` points to your MCP server (default: http://localhost:8080/mcp)
+   - `MCP_AUTH_TOKEN` is optional for local, **required for production**
+   
+   **For production MCP server:**
+   ```bash
+   # Get identity token (expires after 1 hour)
+   gcloud auth print-identity-token
+   
+   # Add to .env:
+   MCP_SERVER_URL=https://vibe-trade-mcp-kff5sbwvca-uc.a.run.app/mcp
+   MCP_AUTH_TOKEN=<token-from-gcloud>
+   ```
 
 3. **Start the MCP server (optional but recommended):**
    The agent can connect to the vibe-trade-mcp server for additional trading tools.
@@ -34,7 +44,7 @@ LangGraph agent for Vibe Trade.
 
 4. **Run the agent server locally:**
    ```bash
-   make dev
+   make run
    # or
    uv run langgraph dev
    ```
@@ -49,7 +59,7 @@ LangGraph agent for Vibe Trade.
 ### Available Make Commands
 
 - `make install` - Install all dependencies (including dev dependencies)
-- `make dev` - Start the LangGraph agent server in development mode
+- `make run` - Start the LangGraph agent server
 - `make test` - Run tests
 - `make test-cov` - Run tests with coverage report
 - `make lint` - Lint code with ruff

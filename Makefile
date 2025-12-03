@@ -1,11 +1,11 @@
-.PHONY: install dev test lint format format-check check clean
+.PHONY: install run test lint format format-check check clean
 
 # Install dependencies
 install:
 	uv sync --all-groups
 
-# Run the LangGraph agent server in development mode
-dev:
+# Run the LangGraph agent server
+run:
 	@if [ ! -f .env ]; then \
 		echo "⚠️  Warning: .env file not found"; \
 		echo "   Create a .env file with your LANGSMITH_API_KEY"; \

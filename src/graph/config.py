@@ -6,7 +6,11 @@ from dataclasses import dataclass
 
 @dataclass
 class AgentConfig:
-    """Configuration for the agent."""
+    """Configuration for the agent.
+
+    All configuration comes from environment variables.
+    The deployment infrastructure sets these appropriately for each environment.
+    """
 
     openai_api_key: str
     openai_model: str = "openai:gpt-4o-mini"
@@ -46,7 +50,19 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
-        """Create configuration from environment variables."""
+        """Create configuration from environment variables.
+
+        Required:
+        - OPENAI_API_KEY: OpenAI API key
+
+        Optional:
+        - OPENAI_MODEL: Model to use (default: "openai:gpt-4o-mini")
+        - AGENT_SYSTEM_PROMPT: Custom system prompt
+        - MCP_SERVER_URL: MCP server URL (default: "http://localhost:8080/mcp")
+        - MCP_AUTH_TOKEN: Authentication token for MCP server (optional)
+        - MAX_TOKENS: Max tokens per response (default: 2000)
+        - MAX_ITERATIONS: Max agent iterations (default: 15)
+        """
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
             raise ValueError(
