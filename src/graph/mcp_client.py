@@ -103,9 +103,10 @@ def get_mcp_tools(
                                 if auth:
                                     headers["Authorization"] = f"Bearer {auth}"
 
-                                # Use a longer timeout for tool calls (60 seconds)
+                                # Use a longer timeout for tool calls (120 seconds)
                                 # Some operations like schema validation or Firestore writes can take time
-                                timeout = httpx.Timeout(60.0, connect=10.0)
+                                # create_card especially can be slow if Firestore emulator is slow
+                                timeout = httpx.Timeout(120.0, connect=10.0)
                                 with httpx.Client(timeout=timeout) as client:
                                     try:
                                         response = client.post(
