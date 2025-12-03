@@ -21,18 +21,18 @@ class AgentState(dict):
 
 def _should_continue(state: AgentState, max_iterations: int = 15) -> str:
     """Determine if we should continue (call tools) or end.
-    
+
     Args:
         state: Current agent state
         max_iterations: Maximum number of agent iterations (default: 15)
     """
     messages = state["messages"]
     last_message = messages[-1]
-    
+
     # Count agent iterations (each agent call is one iteration)
     iteration_count = state.get("iteration_count", 0) + 1
     state["iteration_count"] = iteration_count
-    
+
     # Stop if we've exceeded max iterations (cost control)
     if iteration_count >= max_iterations:
         return "end"
@@ -86,7 +86,7 @@ def create_graph(config: AgentConfig | None = None):
     # Use a lambda to pass max_iterations from config
     def should_continue_with_limit(state: AgentState) -> str:
         return _should_continue(state, max_iterations=config.max_iterations)
-    
+
     workflow.add_conditional_edges(
         "agent",
         should_continue_with_limit,
