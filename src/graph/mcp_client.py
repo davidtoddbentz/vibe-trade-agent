@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from langchain_core.tools import BaseTool, StructuredTool
-from pydantic import BaseModel, create_model
+from pydantic import create_model
 
 logger = logging.getLogger(__name__)
 
@@ -65,26 +65,29 @@ def get_mcp_tools(
                         tool_name = mcp_tool.get("name", "")
                         tool_description = mcp_tool.get("description", "")
                         tool_input_schema = mcp_tool.get("inputSchema", {})
-                        
-                        # Enhance description for tools that require schema_etag
+
+                        # Enhance descriptions for better agent guidance
                         if tool_name == "create_card":
                             tool_description = (
                                 f"{tool_description}\n\n"
-                                "⚠️ CRITICAL: Before calling this tool, you MUST first call get_archetype_schema(type) "
-                                "to get the schema_etag. The schema_etag is REQUIRED and must be included in your call. "
-                                "Workflow: 1) get_archetype_schema(type) → 2) extract 'etag' from response → 3) create_card(type, slots, schema_etag=etag)"
+                                "💡 Workflow: 1) Use get_archetypes to find available types → "
+                                "2) Use get_schema_example(type) to get ready-to-use example slots → "
+                                "3) Optionally modify the example slots → 4) Call create_card(type, slots). "
+                                "The schema_etag is handled automatically by MCP."
                             )
                         elif tool_name == "update_card":
                             tool_description = (
                                 f"{tool_description}\n\n"
-                                "⚠️ CRITICAL: Before calling this tool, you MUST first call get_archetype_schema(type) "
-                                "to get the schema_etag. The schema_etag is REQUIRED and must be included in your call."
+                                "💡 Workflow: 1) Use get_card(card_id) to get current card → "
+                                "2) Use get_archetype_schema(type) to see valid slot values → "
+                                "3) Call update_card(card_id, slots). "
+                                "The schema_etag is handled automatically by MCP."
                             )
                         elif tool_name == "get_schema_example":
                             tool_description = (
                                 f"{tool_description}\n\n"
-                                "💡 TIP: This tool returns both example slots AND the schema_etag. "
-                                "You can use the schema_etag directly when calling create_card."
+                                "💡 TIP: This tool returns ready-to-use example slots. "
+                                "You can use them directly with create_card(type, slots) or modify them first."
                             )
 
                         # Create a factory function to properly capture tool_name and auth
@@ -100,17 +103,27 @@ def get_mcp_tools(
                                 if auth:
                                     headers["Authorization"] = f"Bearer {auth}"
 
-                                with httpx.Client(timeout=30.0) as client:
-                                    response = client.post(
-                                        mcp_url,
-                                        json={
-                                            "jsonrpc": "2.0",
-                                            "id": 1,
-                                            "method": "tools/call",
-                                            "params": {"name": name, "arguments": kwargs},
-                                        },
-                                        headers=headers,
-                                    )
+                                # Use a longer timeout for tool calls (60 seconds)
+                                # Some operations like schema validation or Firestore writes can take time
+                                timeout = httpx.Timeout(60.0, connect=10.0)
+                                with httpx.Client(timeout=timeout) as client:
+                                    try:
+                                        response = client.post(
+                                            mcp_url,
+                                            json={
+                                                "jsonrpc": "2.0",
+                                                "id": 1,
+                                                "method": "tools/call",
+                                                "params": {"name": name, "arguments": kwargs},
+                                            },
+                                            headers=headers,
+                                        )
+                                    except httpx.ReadTimeout as e:
+                                        logger.error(f"Timeout calling MCP tool {name}: {e}")
+                                        return "Error: Request timed out after 60 seconds. The MCP server may be slow or unresponsive."
+                                    except httpx.RequestError as e:
+                                        logger.error(f"Request error calling MCP tool {name}: {e}")
+                                        return f"Error: Failed to connect to MCP server: {e}"
 
                                     if response.status_code == 200:
                                         # MCP server returns SSE format, extract JSON from data field
@@ -136,7 +149,9 @@ def get_mcp_tools(
                                         elif "error" in result:
                                             error_msg = result.get("error", {})
                                             if isinstance(error_msg, dict):
-                                                error_text = error_msg.get("message", str(error_msg))
+                                                error_text = error_msg.get(
+                                                    "message", str(error_msg)
+                                                )
                                             else:
                                                 error_text = str(error_msg)
                                             return f"Error: {error_text}"
@@ -146,7 +161,7 @@ def get_mcp_tools(
 
                         # Create the LangChain tool with proper function and schema
                         tool_func = create_tool_function(tool_name, mcp_auth_token)
-                        
+
                         # Convert MCP JSON Schema to Pydantic model for proper validation
                         args_schema = None
                         if tool_input_schema:
@@ -154,14 +169,14 @@ def get_mcp_tools(
                                 # Extract properties and required fields from JSON schema
                                 properties = tool_input_schema.get("properties", {})
                                 required = tool_input_schema.get("required", [])
-                                
+
                                 # Create field definitions for Pydantic
                                 field_definitions = {}
                                 for prop_name, prop_schema in properties.items():
                                     prop_type = prop_schema.get("type", "string")
                                     prop_description = prop_schema.get("description", "")
                                     prop_default = prop_schema.get("default", ...)
-                                    
+
                                     # Map JSON schema types to Python types
                                     if prop_type == "string":
                                         python_type = str
@@ -177,13 +192,13 @@ def get_mcp_tools(
                                         python_type = dict
                                     else:
                                         python_type = Any
-                                    
+
                                     # Check if field is required
                                     is_required = prop_name in required
-                                    
+
                                     # Create Field with description
                                     from pydantic import Field
-                                    
+
                                     if is_required and prop_default is ...:
                                         field_definitions[prop_name] = (
                                             python_type,
@@ -194,7 +209,7 @@ def get_mcp_tools(
                                             python_type | None,
                                             Field(prop_default, description=prop_description),
                                         )
-                                
+
                                 # Create Pydantic model dynamically
                                 if field_definitions:
                                     SchemaModel = create_model(
@@ -206,7 +221,7 @@ def get_mcp_tools(
                                     f"Could not create Pydantic schema for {tool_name}: {e}"
                                 )
                                 args_schema = None
-                        
+
                         # Create StructuredTool with schema
                         langchain_tool = StructuredTool.from_function(
                             func=tool_func,
@@ -216,6 +231,9 @@ def get_mcp_tools(
                         )
 
                         tools.append(langchain_tool)
+    except httpx.ReadTimeout as e:
+        logger.warning(f"Timeout connecting to MCP server at {mcp_url}: {e}")
+        logger.info("Continuing without MCP tools...")
     except httpx.RequestError as e:
         logger.warning(f"Network error connecting to MCP server at {mcp_url}: {e}")
         logger.info("Continuing without MCP tools...")
