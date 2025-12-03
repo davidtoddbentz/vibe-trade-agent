@@ -30,9 +30,9 @@ def get_mcp_tools(
         }
 
         # Add authentication headers if token is provided
-        if mcp_auth_token:
+        if mcp_auth_token and mcp_auth_token.strip():
             server_config["headers"] = {
-                "Authorization": f"Bearer {mcp_auth_token}",
+                "Authorization": f"Bearer {mcp_auth_token.strip()}",
             }
 
         # Create client and get tools
