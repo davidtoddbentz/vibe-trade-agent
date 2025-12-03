@@ -19,7 +19,7 @@ RUN uv sync --no-dev --frozen
 ENV PORT=8080
 EXPOSE 8080
 
-# Run the LangGraph server
+# Run langgraph dev with custom host/port
+# Rate limiting will be added via middleware hook
 # Use PORT env var (Cloud Run sets this) or default to 8080
-# langgraph dev runs the API server
 CMD ["sh", "-c", "uv run langgraph dev --host 0.0.0.0 --port ${PORT:-8080}"]

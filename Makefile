@@ -1,4 +1,5 @@
-.PHONY: install run test lint format format-check check clean
+.PHONY: install run test lint format format-check check clean \
+	docker-build docker-push docker-build-push deploy deploy-image force-revision
 
 # Install dependencies
 install:
