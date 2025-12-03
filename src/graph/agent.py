@@ -3,11 +3,64 @@
 import logging
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
+from langchain_core.tools import ToolException
+from pydantic import ValidationError
 
 from .config import AgentConfig
 from .mcp_client import get_mcp_tools
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_tool_call_id(request) -> str:
+    """Extract tool_call_id from request object."""
+    if hasattr(request, "tool_call"):
+        if isinstance(request.tool_call, dict):
+            return request.tool_call.get("id", "unknown")
+        return getattr(request.tool_call, "id", "unknown")
+    elif hasattr(request, "tool_call_id"):
+        return request.tool_call_id
+    return "unknown"
+
+
+@wrap_tool_call
+async def handle_tool_errors(request, handler):
+    """Handle tool execution errors gracefully.
+
+    Follows the LangChain docs pattern for tool error handling.
+    Catches ToolException and ValidationError and converts them to ToolMessages
+    so the agent can see the error and continue working.
+
+    Note: Made async because ToolNode uses async execution.
+    """
+    logger.info("🔍 handle_tool_errors middleware invoked")
+    try:
+        result = await handler(request)
+        logger.info("✅ Tool call succeeded")
+        return result
+    except (ToolException, ValidationError) as e:
+        tool_call_id = _extract_tool_call_id(request)
+        error_message = str(e)
+        logger.warning(f"⚠️ Tool error caught ({type(e).__name__}): {error_message[:300]}")
+
+        return ToolMessage(
+            content=error_message,
+            tool_call_id=tool_call_id,
+        )
+    except Exception as e:
+        # Catch any other exceptions too
+        tool_call_id = _extract_tool_call_id(request)
+        logger.error(
+            f"❌ Unexpected error in tool middleware: {type(e).__name__}: {str(e)[:200]}",
+            exc_info=True,
+        )
+
+        return ToolMessage(
+            content=f"Tool error: {str(e)}",
+            tool_call_id=tool_call_id,
+        )
 
 
 def create_agent_runnable(config: AgentConfig | None = None):
@@ -55,11 +108,13 @@ def create_agent_runnable(config: AgentConfig | None = None):
     )
 
     # create_agent accepts model as string or LLM instance
-    # max_iterations is handled at the graph level, not here
+    # Use middleware to handle tool errors as per LangChain docs
+    # wrap_tool_call handles both sync and async functions
     agent = create_agent(
         model=llm,  # Pass LLM instance instead of string
         tools=tools,
         system_prompt=config.system_prompt,
+        middleware=[handle_tool_errors],  # Handle tool errors gracefully
     )
 
     return agent

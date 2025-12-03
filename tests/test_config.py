@@ -1,8 +1,5 @@
 """Tests for configuration."""
 
-import os
-from unittest.mock import patch
-
 import pytest
 
 from src.graph.config import AgentConfig
@@ -61,4 +58,3 @@ def test_agent_config_direct_creation():
     assert config.system_prompt == "Custom prompt"
     assert config.mcp_server_url == "http://custom:8080/mcp"
     assert config.mcp_auth_token == "token"
-
