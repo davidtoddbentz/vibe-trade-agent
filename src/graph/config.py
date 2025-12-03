@@ -3,7 +3,6 @@
 import os
 from dataclasses import dataclass
 
-
 # Default system prompt - defined here to avoid duplication
 _DEFAULT_SYSTEM_PROMPT = (
     "You are a friendly and helpful trading strategy assistant. "
