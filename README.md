@@ -8,6 +8,7 @@ AI agent for creating trading strategies using the Vibe Trade MCP server.
 - **MCP Integration**: Connects to Vibe Trade MCP server for strategy operations
 - **Free Tier**: 10 requests per 24 hours per session (IP-based)
 - **FastAPI Endpoint**: REST API for UI integration
+- **Streaming Support**: Real-time updates showing reasoning, tool calls, and message chunks
 - **Cloud Run Ready**: Deployed on Google Cloud Run (3 instances)
 
 ## Architecture
@@ -70,11 +71,37 @@ The agent is designed to be user-friendly, translating technical trading concept
    curl http://localhost:8081/health
    ```
 
-2. **Chat with agent:**
+2. **Chat with agent (non-streaming):**
    ```bash
    curl -X POST http://localhost:8081/chat \
      -H "Content-Type: application/json" \
      -d '{"messages": [{"role": "user", "content": "Hello"}]}'
+   ```
+
+3. **Chat with agent (streaming):**
+   
+   **Using curl (simple CLI testing):**
+   ```bash
+   # Basic streaming test - see events in real-time
+   curl -N -X POST http://localhost:8081/chat/stream \
+     -H "Content-Type: application/json" \
+     -d '{"messages": [{"role": "user", "content": "Get archetypes"}]}'
+   ```
+   
+   The `-N` flag disables buffering so you can see events in real-time.
+   
+   **Using httpie (if installed - nicer output):**
+   ```bash
+   http --stream POST http://localhost:8081/chat/stream \
+     messages:='[{"role":"user","content":"Get archetypes"}]'
+   ```
+   
+   **Format output with jq (optional):**
+   ```bash
+   curl -N -X POST http://localhost:8081/chat/stream \
+     -H "Content-Type: application/json" \
+     -d '{"messages": [{"role": "user", "content": "Get archetypes"}]}' | \
+     grep "^data: " | sed 's/^data: //' | jq .
    ```
 
 ## Environment Variables
@@ -107,6 +134,73 @@ Chat with the agent to create trading strategies.
   "session_id": "session-id",
   "remaining_requests": 9
 }
+```
+
+### `POST /chat/stream`
+
+Streaming chat endpoint that provides real-time updates via Server-Sent Events (SSE).
+
+**Request:**
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Create a trend-following strategy for QQQ"}
+  ],
+  "session_id": "optional-session-id"
+}
+```
+
+**Response (Server-Sent Events):**
+```
+data: {"type":"status","content":"Starting agent...","tool_name":null,"tool_description":null}
+
+data: {"type":"reasoning","content":"I need to first get the list of available archetypes...","tool_name":null,"tool_description":null}
+
+data: {"type":"tool_call","content":"Using get_archetypes","tool_name":"get_archetypes","tool_description":"Retrieving available trading archetypes"}
+
+data: {"type":"message_chunk","content":"I'll help you create a trend-following strategy..."}
+
+data: {"type":"complete","content":"{\"message\":\"...\",\"reasoning\":\"...\",\"session_id\":\"...\",\"remaining_requests\":9}"}
+```
+
+**Event Types:**
+- `status`: Initial status update
+- `reasoning`: Agent's thinking/reasoning process (from gpt-5)
+- `tool_call`: Tool being used (e.g., `get_archetypes`, `create_card`)
+- `message_chunk`: Incremental text chunks of the response
+- `complete`: Final completion with full response data
+- `error`: Error occurred
+
+**Example JavaScript client:**
+```javascript
+const eventSource = new EventSource('/chat/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    messages: [{ role: 'user', content: 'Get archetypes' }]
+  })
+});
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  switch (data.type) {
+    case 'reasoning':
+      console.log('🧠 Reasoning:', data.content);
+      break;
+    case 'tool_call':
+      console.log('🔧 Using tool:', data.tool_name);
+      break;
+    case 'message_chunk':
+      console.log('💬 Message chunk:', data.content);
+      break;
+    case 'complete':
+      const result = JSON.parse(data.content);
+      console.log('✅ Complete:', result.message);
+      eventSource.close();
+      break;
+  }
+};
 ```
 
 ### `GET /health`

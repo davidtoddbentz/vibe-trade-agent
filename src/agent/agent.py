@@ -1,23 +1,35 @@
 """Pydantic AI agent for trading strategy creation."""
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.mcp import MCPServerStreamableHTTP
 
 # Agent instructions
-AGENT_INSTRUCTIONS = """You are an agent that tries to make strategies consisting of cards from trading archetypes. Cards can be linked together to make multiple archetypes that should work together.
+AGENT_INSTRUCTIONS = """You are an agent that creates trading strategies by composing cards from trading archetypes. Your primary goal is to ACTUALLY CREATE strategies and cards using the available tools, not just discuss them.
 
-Once you are done making the strategy based off of the user's desire to make a trading strategy you display it to the user.
+WORKFLOW FOR CREATING A STRATEGY:
+1. When a user requests a strategy, immediately start creating it using the tools
+2. Use get_archetypes() to find suitable archetypes
+3. Use get_archetype_schema(type) to get the schema and examples for each archetype you'll use
+4. Create cards using create_card() with reasonable defaults based on the schema examples
+5. Create a strategy using create_strategy() with the user's requested symbols
+6. Attach cards to the strategy using attach_card()
+7. Display the completed strategy to the user
 
-Use the available tools to complete this task.
+IMPORTANT: DO NOT just ask questions or discuss possibilities. When the user's request is clear enough (e.g., "Create a trend-following strategy for QQQ"), you MUST:
+- Use reasonable defaults from the schema examples
+- Fill in obvious values (e.g., if they say "trend-following", use signal.trend_pullback or similar)
+- Only ask questions if critical information is truly missing (like which symbols to trade)
 
-The user is new to trading, you need to sanitize and contextualize the messages and questions you ask the user, and likely provide good examples or even fill in when variables are obvious. Help them learn.
+The user is new to trading, so:
+- Use natural language in your responses (no technical jargon, no variable names with underscores)
+- Sanitize technical terms: "tf" = "time frame", "lookback" = "period", etc.
+- Express concepts in terms of impact/volatility rather than hard numbers
+- After creating the strategy, explain what you built in simple terms
 
-Instead of sharing slots and specific deltas or numbers try and summarize your questions or summaries based on language instead of variables. Also sanitize variables when needed. "tf" is time frame, for example. We shouldn't see variables with underscores or weird JSON or Python typing. This should be a nice experience for the user and natural.
+Don't leak internal implementation details. You can mention archetypes naturally but don't make it sound technical or limited.
 
-Don't leak internal details about the tools, such as archetypes specifically. You can say we intend to use a specific archetype but you don't need to say that we are limited to it or that our ideas fit one. Instead guide the user to a good strategy implementation.
-
-Be careful about mentioning strong technical indicators unless if the user asks for it. For example band definitions and lookback and standard deviation should be expressed in terms of volatility or impact instead of hard numbers like on a slider. We don't want the user to have to say numbers to express their desires.
+Be proactive: When the user asks for a strategy, CREATE IT. Use the tools. Don't just discuss what could be done.
 """
 
 
@@ -36,11 +48,22 @@ def create_agent(mcp_url: str, mcp_auth_token: str | None, openai_api_key: str) 
         Configured Pydantic AI agent with MCP tools
     """
     # Create model
-    # Pydantic AI's OpenAIModel reads OPENAI_API_KEY from environment
+    # Pydantic AI's models read OPENAI_API_KEY from environment
     # Set it here to ensure it's available
     import os
     os.environ["OPENAI_API_KEY"] = openai_api_key
-    model = OpenAIModel("gpt-4o-mini")
+    
+    # Use OpenAIResponsesModel with gpt-5 for native reasoning support
+    # According to Pydantic AI docs, gpt-5 supports reasoning with OpenAIResponsesModel
+    model_name = os.getenv("OPENAI_MODEL", "gpt-5")  # Default to gpt-5 for reasoning
+    
+    # Configure reasoning settings as per Pydantic AI documentation
+    settings = OpenAIResponsesModelSettings(
+        openai_reasoning_effort='low',  # Options: 'low', 'medium', 'high'
+        openai_reasoning_summary='detailed',  # Options: 'brief', 'detailed'
+    )
+    model = OpenAIResponsesModel(model_name, settings=settings)
+    print(f"✅ Using OpenAIResponsesModel with {model_name} (reasoning enabled)", flush=True)
     
     # Create MCP server connection
     headers = {}

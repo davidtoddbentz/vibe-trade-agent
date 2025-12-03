@@ -23,4 +23,15 @@ class ChatResponse(BaseModel):
     message: str = Field(..., description="Agent response")
     session_id: str = Field(..., description="Session ID for tracking")
     remaining_requests: int | None = Field(None, description="Remaining free requests (if applicable)")
+    reasoning: str | None = Field(None, description="Agent's reasoning/thinking process (optional)")
+    tool_calls: list[dict[str, str]] | None = Field(None, description="Tools used by the agent (optional)")
+
+
+class StreamEvent(BaseModel):
+    """Streaming event for real-time updates."""
+    
+    type: str = Field(..., description="Event type: 'reasoning', 'tool_call', 'message_chunk', 'complete'")
+    content: str = Field(..., description="Event content")
+    tool_name: str | None = Field(None, description="Tool name (for tool_call events)")
+    tool_description: str | None = Field(None, description="Tool description (for tool_call events)")
 

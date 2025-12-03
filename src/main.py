@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent import create_agent
-from src.api.handlers import create_chat_handler, create_health_handler
+from src.api.handlers import create_chat_handler, create_chat_stream_handler, create_health_handler
 from src.api.models import ChatResponse
 from src.config import Config
 
@@ -80,6 +80,7 @@ app.add_middleware(
 # Register routes
 app.get("/health")(create_health_handler())
 app.post("/chat")(create_chat_handler(agent))
+app.post("/chat/stream")(create_chat_stream_handler(agent))
 
 
 def main():
