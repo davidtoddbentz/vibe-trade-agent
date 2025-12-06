@@ -6,9 +6,10 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN chmod +x /usr/local/bin/uv
 
-# Copy dependency files and source code
+# Copy dependency files, prompt, and source code
 COPY pyproject.toml ./
 COPY uv.lock ./
+COPY system_prompt.txt ./
 COPY src/ ./src/
 COPY langgraph.json ./
 

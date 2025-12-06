@@ -78,14 +78,14 @@ docker-build-push: docker-build docker-push
 
 # Deployment workflow
 # Step 1: Build and push Docker image
-# Step 2: Force Cloud Run to use the new image
+# Step 2: Force Cloud Run to use the new image for both services
 # For infrastructure changes, run 'terraform apply' in vibe-trade-terraform separately
-deploy: docker-build-push force-revision
+deploy: docker-build-push force-revision-both
 	@echo ""
-	@echo "✅ Code deployment complete!"
+	@echo "✅ Code deployment complete for both agent services!"
 
-# Force Cloud Run to create a new revision with the latest image
-# Uses environment variables or defaults
+# Force Cloud Run to create a new revision with the latest image for a single service
+# Uses environment variables or defaults (SERVICE_NAME, REGION, PROJECT_ID, ARTIFACT_REGISTRY_URL)
 force-revision:
 	@echo "🔄 Forcing Cloud Run to use latest image..."
 	@SERVICE_NAME=$${SERVICE_NAME:-vibe-trade-agent} && \
@@ -100,6 +100,13 @@ force-revision:
 			--project=$$PROJECT_ID \
 			--image=$$IMAGE_REPO/vibe-trade-agent:latest \
 			2>&1 | grep -E "(Deploying|revision|Service URL|Done)" || (echo "⚠️  Update may have failed or no changes needed" && exit 1)
+
+# Force Cloud Run to create new revisions for both primary and alt agent services
+force-revision-both:
+	@echo "🔄 Forcing Cloud Run to use latest image for primary agent..."
+	@$(MAKE) force-revision SERVICE_NAME=vibe-trade-agent
+	@echo "🔄 Forcing Cloud Run to use latest image for alternate agent..."
+	@$(MAKE) force-revision SERVICE_NAME=vibe-trade-agent-alt
 
 deploy-image: docker-build-push
 	@echo ""

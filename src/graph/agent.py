@@ -36,7 +36,7 @@ async def handle_tool_errors(request, handler):
     Note: Made async because ToolNode uses async execution.
     """
     tool_call_id = _extract_tool_call_id(request)
-    
+
     # Extract tool name and arguments for verbose logging
     tool_name = "unknown"
     tool_args = {}
@@ -47,23 +47,23 @@ async def handle_tool_errors(request, handler):
         else:
             tool_name = getattr(request.tool_call, "name", "unknown")
             tool_args = getattr(request.tool_call, "args", {})
-    
+
     logger.debug(f"🔍 Executing tool: {tool_name} (call_id: {tool_call_id})")
     logger.debug(f"   Arguments: {tool_args}")
-    
+
     try:
         result = await handler(request)
-        
+
         # Log result summary (truncate for readability)
         result_str = str(result)
         if len(result_str) > 500:
             result_preview = result_str[:500] + "... (truncated)"
         else:
             result_preview = result_str
-        
+
         logger.info(f"✅ Tool '{tool_name}' succeeded (call_id: {tool_call_id})")
         logger.debug(f"   Result: {result_preview}")
-        
+
         return result
     except (ToolException, ValidationError) as e:
         error_message = str(e)
@@ -144,7 +144,7 @@ def create_agent_runnable(config: AgentConfig | None = None):
         "max_tokens": config.max_tokens,
         "api_key": config.openai_api_key,
     }
-    
+
     # Add reasoning_effort if specified (for o1 and gpt-5 models)
     # reasoning_effort is supported for o1, o1-preview, o1-mini, o1-mini-preview, and gpt-5 models
     if config.reasoning_effort:
@@ -157,7 +157,7 @@ def create_agent_runnable(config: AgentConfig | None = None):
             logger.warning(
                 f"⚠️ reasoning_effort is only supported for o1 and gpt-5 models, but model is '{model_name}'. Ignoring reasoning_effort."
             )
-    
+
     logger.debug(f"Creating LLM with kwargs: { {k: v if k != 'api_key' else '***' for k, v in llm_kwargs.items()} }")
     llm = ChatOpenAI(**llm_kwargs)
 

@@ -24,7 +24,7 @@ def get_mcp_tools(
     """
     try:
         logger.debug(f"🔌 Connecting to MCP server at {mcp_url}")
-        
+
         # Configure the MCP client with streamable_http transport
         server_config = {
             "transport": "streamable_http",
@@ -53,7 +53,7 @@ def get_mcp_tools(
         logger.debug("📥 Fetching tools from MCP server...")
         tools = asyncio.run(client.get_tools())
         logger.debug(f"   Received {len(tools)} tools from MCP server")
-        
+
         if logger.isEnabledFor(logging.DEBUG) and tools:
             tool_names = [tool.name for tool in tools]
             logger.debug(f"   Tool names: {', '.join(tool_names[:10])}{'...' if len(tool_names) > 10 else ''}")
@@ -68,7 +68,7 @@ def get_mcp_tools(
                 if logger.isEnabledFor(logging.DEBUG):
                     resource_uris = [str(r.metadata.get("uri", "unknown")) for r in resources]
                     logger.debug(f"   Resource URIs: {', '.join(resource_uris[:5])}{'...' if len(resource_uris) > 5 else ''}")
-                
+
                 # Create tools for reading resources (data is already in the Blobs)
                 resource_tools = _create_resource_tools(resources)
                 tools.extend(resource_tools)
@@ -92,30 +92,30 @@ def get_mcp_tools(
 
 def _create_resource_tools(resources: list) -> list[BaseTool]:
     """Create LangChain tools for reading MCP resources.
-    
+
     The resources are already loaded as Blob objects from get_resources(),
     so we just need to extract the data from them.
-    
+
     Args:
         resources: List of MCP resource Blobs (from get_resources())
-        
+
     Returns:
         List of LangChain tools, one per resource
     """
     resource_tools = []
-    
+
     for resource_blob in resources:
         # Extract URI from metadata
         uri = str(resource_blob.metadata.get("uri", ""))
         if not uri:
-            logger.debug(f"   Skipping resource with no URI")
+            logger.debug("   Skipping resource with no URI")
             continue
-            
+
         # Get the resource data (already loaded in the Blob)
         resource_data = resource_blob.as_string()
         data_size = len(resource_data)
         logger.debug(f"   Processing resource: {uri} ({data_size} bytes)")
-        
+
         # Create a tool that returns the resource data
         # Use a closure to capture the resource_data
         def make_resource_tool(data: str, resource_uri: str):
@@ -125,9 +125,9 @@ def _create_resource_tools(resources: list) -> list[BaseTool]:
                 description=f"Read MCP resource at {resource_uri}. Returns JSON data with archetype catalog or schemas.",
                 func=lambda _: data,  # Accept one argument (ignored) and return the pre-loaded data
             )
-        
+
         tool = make_resource_tool(resource_data, uri)
         resource_tools.append(tool)
-    
+
     logger.debug(f"   Created {len(resource_tools)} resource tools")
     return resource_tools
