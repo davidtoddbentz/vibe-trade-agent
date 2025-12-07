@@ -1,120 +1,91 @@
-"""Agent creation logic for Vibe Trade."""
+"""Agent creation logic for Vibe Trade - Remote Agent."""
 
 import logging
+from typing import Any
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_tool_call
-from langchain.messages import ToolMessage
-from langchain_core.tools import ToolException
-from pydantic import ValidationError
+from langgraph.graph import StateGraph, END
+from langgraph_sdk.client import get_client
 
 from .config import AgentConfig
-from .mcp_client import get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_tool_call_id(request) -> str:
-    """Extract tool_call_id from request object."""
-    if hasattr(request, "tool_call"):
-        if isinstance(request.tool_call, dict):
-            return request.tool_call.get("id", "unknown")
-        return getattr(request.tool_call, "id", "unknown")
-    elif hasattr(request, "tool_call_id"):
-        return request.tool_call_id
-    return "unknown"
-
-
-@wrap_tool_call
-async def handle_tool_errors(request, handler):
-    """Handle tool execution errors gracefully.
-
-    Follows the LangChain docs pattern for tool error handling.
-    Catches ToolException and ValidationError and converts them to ToolMessages
-    so the agent can see the error and continue working.
-
-    Note: Made async because ToolNode uses async execution.
-    """
-    logger.info("🔍 handle_tool_errors middleware invoked")
-    try:
-        result = await handler(request)
-        logger.info("✅ Tool call succeeded")
-        return result
-    except (ToolException, ValidationError) as e:
-        tool_call_id = _extract_tool_call_id(request)
-        error_message = str(e)
-        logger.warning(f"⚠️ Tool error caught ({type(e).__name__}): {error_message[:300]}")
-
-        return ToolMessage(
-            content=error_message,
-            tool_call_id=tool_call_id,
-        )
-    except Exception as e:
-        # Catch any other exceptions too
-        tool_call_id = _extract_tool_call_id(request)
-        logger.error(
-            f"❌ Unexpected error in tool middleware: {type(e).__name__}: {str(e)[:200]}",
-            exc_info=True,
-        )
-
-        return ToolMessage(
-            content=f"Tool error: {str(e)}",
-            tool_call_id=tool_call_id,
-        )
-
-
 def create_agent_runnable(config: AgentConfig | None = None):
-    """Create a ReAct agent with tools using LangChain's create_agent.
-
+    """Create a graph that proxies to a remote LangGraph agent.
+    
     Args:
         config: Agent configuration. If None, loads from environment.
-
+        
     Returns:
-        Configured agent runnable
+        A graph that forwards requests to the remote agent.
     """
     if config is None:
         config = AgentConfig.from_env()
-
-    # Get MCP tools
-    tools = []
-    try:
-        mcp_tools = get_mcp_tools(
-            mcp_url=config.mcp_server_url, mcp_auth_token=config.mcp_auth_token
+    
+    if not config.langgraph_api_key or not config.langgraph_api_url or not config.remote_agent_id:
+        raise ValueError(
+            "langgraph_api_key, langgraph_api_url, and remote_agent_id are required"
         )
-        if mcp_tools:
-            logger.info(f"Connected to MCP server, loaded {len(mcp_tools)} tools")
-            tools.extend(mcp_tools)
-        else:
-            logger.warning("MCP server not available, no tools loaded")
-    except Exception as e:
-        logger.warning(f"Could not load MCP tools: {e}", exc_info=True)
-        logger.info("Continuing without MCP tools...")
-
-    if not tools:
-        logger.warning("No tools available - agent will have limited functionality")
-
-    # Parse model string - create_agent accepts model as string or LLM instance
-    # Format: "openai:gpt-4o-mini" or "gpt-4o-mini"
-    model_name = config.openai_model.replace("openai:", "")
-
-    from langchain_openai import ChatOpenAI
-
-    # Create LLM with cost limits
-    llm = ChatOpenAI(
-        model=model_name,
-        temperature=0,
-        max_tokens=config.max_tokens,
-        api_key=config.openai_api_key,
+    
+    logger.info(f"Connecting to remote agent: {config.remote_agent_id} at {config.langgraph_api_url}")
+    
+    # Create LangGraph SDK client
+    client = get_client(
+        url=config.langgraph_api_url,
+        api_key=config.langgraph_api_key,
+        headers={
+            "X-Auth-Scheme": "langsmith-api-key",
+        },
     )
-
-    # create_agent accepts model as string or LLM instance
-    # Use middleware to handle tool errors as per LangChain docs
-    # wrap_tool_call handles both sync and async functions
-    agent = create_agent(
-        model=llm,  # Pass LLM instance instead of string
-        tools=tools,
-        system_prompt=config.system_prompt,
-        middleware=[handle_tool_errors],  # Handle tool errors gracefully
-    )
-
-    return agent
+    agent_id = config.remote_agent_id
+    
+    # Create a graph that proxies to the remote agent
+    async def remote_agent_node(state: dict[str, Any]) -> dict[str, Any]:
+        """Node that forwards requests to remote agent."""
+        # Extract messages from state
+        messages = state.get("messages", [])
+        
+        # Convert messages to dict format if needed
+        message_dicts = []
+        for msg in messages:
+            if hasattr(msg, "dict"):
+                message_dicts.append(msg.dict())
+            elif hasattr(msg, "model_dump"):
+                message_dicts.append(msg.model_dump())
+            elif isinstance(msg, dict):
+                message_dicts.append(msg)
+            else:
+                message_dicts.append({"content": str(msg), "role": "user"})
+        
+        # Get the assistant
+        assistant = await client.assistants.get(agent_id)
+        
+        # Use the assistant's graph_name to run it
+        graph_name = getattr(assistant, "graph_name", None) or agent_id
+        
+        # Stream the run
+        final_state = None
+        async for chunk in client.runs.stream(
+            None,  # Threadless run
+            graph_name,
+            input={"messages": message_dicts},
+        ):
+            if hasattr(chunk, "data") and chunk.data:
+                final_state = chunk.data
+            elif isinstance(chunk, dict) and "data" in chunk:
+                final_state = chunk["data"]
+        
+        # Return updated state
+        if final_state and "messages" in final_state:
+            return {**state, "messages": final_state["messages"]}
+        
+        return state
+    
+    # Create a simple graph that calls the remote agent
+    workflow = StateGraph(dict)
+    workflow.add_node("remote_agent", remote_agent_node)
+    workflow.set_entry_point("remote_agent")
+    workflow.add_edge("remote_agent", END)
+    
+    return workflow.compile()

@@ -6,55 +6,53 @@ from src.graph.config import AgentConfig
 
 
 def test_agent_config_from_env_missing_key(monkeypatch):
-    """Test that config creation fails without OpenAI API key."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    """Test that config creation fails without LangGraph API key."""
+    monkeypatch.delenv("LANGGRAPH_API_KEY", raising=False)
 
-    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+    with pytest.raises(ValueError, match="LANGGRAPH_API_KEY"):
+        AgentConfig.from_env()
+
+
+def test_agent_config_from_env_missing_url(monkeypatch):
+    """Test that config creation fails without LangGraph API URL."""
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.delenv("LANGGRAPH_API_URL", raising=False)
+
+    with pytest.raises(ValueError, match="LANGGRAPH_API_URL"):
+        AgentConfig.from_env()
+
+
+def test_agent_config_from_env_missing_agent_id(monkeypatch):
+    """Test that config creation fails without remote agent ID."""
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGGRAPH_API_URL", "https://test.url")
+    monkeypatch.delenv("REMOTE_AGENT_ID", raising=False)
+
+    with pytest.raises(ValueError, match="REMOTE_AGENT_ID"):
         AgentConfig.from_env()
 
 
 def test_agent_config_from_env_success(monkeypatch):
     """Test successful config creation from environment."""
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setenv("OPENAI_MODEL", "openai:gpt-4")
-    monkeypatch.setenv("MCP_SERVER_URL", "http://custom:8080/mcp")
-    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGGRAPH_API_URL", "https://test.url")
+    monkeypatch.setenv("REMOTE_AGENT_ID", "test-agent-id")
 
     config = AgentConfig.from_env()
 
-    assert config.openai_api_key == "test-key"
-    assert config.openai_model == "openai:gpt-4"
-    assert config.mcp_server_url == "http://custom:8080/mcp"
-    assert config.mcp_auth_token == "test-token"
-
-
-def test_agent_config_defaults(monkeypatch):
-    """Test config uses defaults when env vars not set."""
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.delenv("OPENAI_MODEL", raising=False)
-    monkeypatch.delenv("MCP_SERVER_URL", raising=False)
-    monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
-
-    config = AgentConfig.from_env()
-
-    assert config.openai_api_key == "test-key"
-    assert config.openai_model == "openai:gpt-4o-mini"
-    assert config.mcp_server_url == "http://localhost:8080/mcp"
-    assert config.mcp_auth_token is None
+    assert config.langgraph_api_key == "test-key"
+    assert config.langgraph_api_url == "https://test.url"
+    assert config.remote_agent_id == "test-agent-id"
 
 
 def test_agent_config_direct_creation():
     """Test creating config directly without environment."""
     config = AgentConfig(
-        openai_api_key="direct-key",
-        openai_model="openai:gpt-4",
-        system_prompt="Custom prompt",
-        mcp_server_url="http://custom:8080/mcp",
-        mcp_auth_token="token",
+        langgraph_api_key="direct-key",
+        langgraph_api_url="https://direct.url",
+        remote_agent_id="direct-agent-id",
     )
 
-    assert config.openai_api_key == "direct-key"
-    assert config.openai_model == "openai:gpt-4"
-    assert config.system_prompt == "Custom prompt"
-    assert config.mcp_server_url == "http://custom:8080/mcp"
-    assert config.mcp_auth_token == "token"
+    assert config.langgraph_api_key == "direct-key"
+    assert config.langgraph_api_url == "https://direct.url"
+    assert config.remote_agent_id == "direct-agent-id"

@@ -14,35 +14,14 @@ LangGraph agent for Vibe Trade.
 2. **Create a `.env` file:**
    Create a `.env` file in the root directory with your API keys:
    ```
-   LANGSMITH_API_KEY=lsv2_...
-   OPENAI_API_KEY=sk-...
-   MCP_SERVER_URL=http://localhost:8080/mcp
-   MCP_AUTH_TOKEN=  # Optional, only if MCP server requires auth
+   LANGGRAPH_API_KEY=lsv2_...
+   LANGGRAPH_API_URL=https://prod-deepagents-agent-build-d4c1479ed8ce53fbb8c3eefc91f0aa7d.us.langgraph.app
+   REMOTE_AGENT_ID=b84e1683-d134-4b29-ae6b-571fba50bc1e
    ```
-   - Get your LangSmith API key from https://smith.langchain.com/
-   - Get your OpenAI API key from https://platform.openai.com/api-keys
-   - `MCP_SERVER_URL` points to your MCP server (default: http://localhost:8080/mcp)
-   - `MCP_AUTH_TOKEN` is optional for local, **required for production**
-   
-   **For production MCP server:**
-   ```bash
-   # Get identity token (expires after 1 hour)
-   gcloud auth print-identity-token
-   
-   # Add to .env:
-   MCP_SERVER_URL=https://vibe-trade-mcp-kff5sbwvca-uc.a.run.app/mcp
-   MCP_AUTH_TOKEN=<token-from-gcloud>
-   ```
+   - Get your LangGraph API key from https://smith.langchain.com/
+   - The remote agent handles all tooling and configuration
 
-3. **Start the MCP server (optional but recommended):**
-   The agent can connect to the vibe-trade-mcp server for additional trading tools.
-   ```bash
-   cd ../vibe-trade-mcp
-   make run  # or: uv run main
-   ```
-   The MCP server should be running on port 8080. If it's not available, the agent will continue with local tools only.
-
-4. **Run the agent server locally:**
+3. **Run the agent server locally:**
    ```bash
    make run
    # or

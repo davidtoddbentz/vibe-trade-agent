@@ -1,6 +1,6 @@
 """Tests for agent creation."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -9,62 +9,84 @@ from src.graph.config import AgentConfig
 
 
 def test_create_agent_runnable_missing_api_key(monkeypatch):
-    """Test that agent creation fails without OpenAI API key."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+    """Test that agent creation fails without LangGraph API key."""
+    monkeypatch.delenv("LANGGRAPH_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="LANGGRAPH_API_KEY"):
         AgentConfig.from_env()
 
 
-def test_create_agent_runnable_with_config(mock_openai_api_key):
+def test_create_agent_runnable_missing_api_url(monkeypatch):
+    """Test that agent creation fails without LangGraph API URL."""
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.delenv("LANGGRAPH_API_URL", raising=False)
+    with pytest.raises(ValueError, match="LANGGRAPH_API_URL"):
+        AgentConfig.from_env()
+
+
+def test_create_agent_runnable_missing_agent_id(monkeypatch):
+    """Test that agent creation fails without remote agent ID."""
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGGRAPH_API_URL", "https://test.url")
+    monkeypatch.delenv("REMOTE_AGENT_ID", raising=False)
+    with pytest.raises(ValueError, match="REMOTE_AGENT_ID"):
+        AgentConfig.from_env()
+
+
+def test_create_agent_runnable_with_config():
     """Test agent creation with explicit config."""
     config = AgentConfig(
-        openai_api_key="test-key",
-        openai_model="openai:gpt-4",
-        system_prompt="Test prompt",
+        langgraph_api_key="test-key",
+        langgraph_api_url="https://test.url",
+        remote_agent_id="test-agent-id",
     )
 
-    with patch("src.graph.agent.create_agent") as mock_create_agent:
-        mock_agent = MagicMock()
-        mock_create_agent.return_value = mock_agent
+    with patch("src.graph.agent.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        
+        # Mock the stream method
+        async def mock_stream(*args, **kwargs):
+            # Yield a mock chunk with data
+            mock_chunk = MagicMock()
+            mock_chunk.data = {"messages": []}
+            yield mock_chunk
+        
+        mock_client.runs.stream = mock_stream
+        
+        with patch("src.graph.agent.StateGraph") as mock_state_graph:
+            mock_workflow = MagicMock()
+            mock_graph = MagicMock()
+            mock_workflow.compile.return_value = mock_graph
+            mock_state_graph.return_value = mock_workflow
+            
+            agent = create_agent_runnable(config)
+            assert agent == mock_graph
+            mock_get_client.assert_called_once()
 
-        with patch("src.graph.agent.get_mcp_tools", return_value=[]):
-            with patch("langchain_openai.ChatOpenAI") as mock_chat_openai:
-                mock_llm = MagicMock()
-                mock_chat_openai.return_value = mock_llm
-                agent = create_agent_runnable(config)
-                assert agent == mock_agent
-                mock_create_agent.assert_called_once()
-                call_args = mock_create_agent.call_args
-                # Now we pass ChatOpenAI instance, not string
-                assert call_args.kwargs.get("model") == mock_llm
-                assert call_args.kwargs.get("system_prompt") == "Test prompt"
-                # Verify ChatOpenAI was called with correct model name
-                mock_chat_openai.assert_called_once()
-                assert mock_chat_openai.call_args.kwargs["model"] == "gpt-4"
 
-
-def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url):
+def test_create_agent_runnable_success(monkeypatch):
     """Test successful agent creation."""
-    with patch("src.graph.agent.create_agent") as mock_create_agent:
-        mock_agent = MagicMock()
-        mock_create_agent.return_value = mock_agent
-
-        with patch("src.graph.agent.get_mcp_tools", return_value=[]):
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGGRAPH_API_URL", "https://test.url")
+    monkeypatch.setenv("REMOTE_AGENT_ID", "test-agent-id")
+    
+    with patch("src.graph.agent.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        
+        # Mock the stream method
+        async def mock_stream(*args, **kwargs):
+            mock_chunk = MagicMock()
+            mock_chunk.data = {"messages": []}
+            yield mock_chunk
+        
+        mock_client.runs.stream = mock_stream
+        
+        with patch("src.graph.agent.StateGraph") as mock_state_graph:
+            mock_workflow = MagicMock()
+            mock_graph = MagicMock()
+            mock_workflow.compile.return_value = mock_graph
+            mock_state_graph.return_value = mock_workflow
+            
             agent = create_agent_runnable()
-            assert agent == mock_agent
-            mock_create_agent.assert_called_once()
-
-
-def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tools):
-    """Test agent creation with MCP tools."""
-    with patch("src.graph.agent.create_agent") as mock_create_agent:
-        mock_agent = MagicMock()
-        mock_create_agent.return_value = mock_agent
-
-        with patch("src.graph.agent.get_mcp_tools", return_value=mock_mcp_tools):
-            agent = create_agent_runnable()
-            assert agent == mock_agent
-            # Verify tools were passed to create_agent
-            call_args = mock_create_agent.call_args
-            tools = call_args.kwargs.get("tools", [])
-            assert len(tools) > 0  # Should have MCP tools
+            assert agent == mock_graph
