@@ -1,11 +1,10 @@
 """LangGraph agent for Vibe Trade - Remote Agent."""
 
-from .agent import create_agent_runnable
-from .config import AgentConfig
+from .agent import client, agent_id, get_assistant
 
-# Load configuration from environment and create graph
-# This is the entry point for LangGraph
-_config = AgentConfig.from_env()
-agent = create_agent_runnable(_config)
+# Export client and agent_id for use
+__all__ = ["client", "agent_id", "get_assistant"]
 
-graph = agent
+# Create a minimal graph export for langgraph.json
+# This is a placeholder - the actual client is used directly
+graph = None
