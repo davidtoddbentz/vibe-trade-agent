@@ -34,6 +34,16 @@ _DEFAULT_SYSTEM_PROMPT = (
     "  * Use attach_card to link components together into a complete strategy\n"
     "- After creating the strategy, display it to the user in a friendly, conversational way that explains what it does\n"
     "- Never just describe what you would do - actually use the tools to create the strategy\n\n"
+    "CHOOSING ARCHETYPES:\n"
+    "- For simple rule-based conditions (e.g., 'buy if return <= 1%', 'exit if volatility is high', 'only trade on Sundays'):\n"
+    "  * Use entry.rule_trigger for simple entry conditions based on metrics (returns, gaps, VWAP distance, regimes)\n"
+    "  * Use exit.rule_trigger for simple exit conditions based on metrics\n"
+    "  * Use gate.time_filter for day-of-week, time window, or calendar-based filtering\n"
+    "  * Use gate.regime for high-level regime filtering (trend, volatility regimes)\n"
+    "- For pattern-based trading ideas (e.g., 'buy pullbacks in an uptrend', 'fade extremes back to mean', 'trade breakouts'):\n"
+    "  * Use pattern-specific archetypes like entry.trend_pullback, entry.range_mean_reversion, entry.breakout_trendfollow\n"
+    "- When in doubt, use get_archetypes to see all available options and choose the one that best matches the user's intent\n"
+    "- Simple single-condition rules should use rule_trigger archetypes; complex multi-condition patterns should use pattern-specific archetypes\n\n"
     "ERROR HANDLING:\n"
     "When tool calls fail, DO NOT stop. Instead:\n"
     "1. Read the error message carefully - it includes error_code, retryable flag, recovery_hint, and details\n"
@@ -62,6 +72,7 @@ class AgentConfig:
 
     openai_api_key: str
     openai_model: str = "openai:gpt-4o-mini"
+    checker_model: str = "openai:gpt-4o"  # Better model for checking work
     system_prompt: str = _DEFAULT_SYSTEM_PROMPT
     mcp_server_url: str = "http://localhost:8080/mcp"
     mcp_auth_token: str | None = None
@@ -79,6 +90,7 @@ class AgentConfig:
 
         Optional:
         - OPENAI_MODEL: Model to use (default: "openai:gpt-4o-mini")
+        - CHECKER_MODEL: Model for checker agent (default: "openai:gpt-4o")
         - AGENT_SYSTEM_PROMPT: Custom system prompt
         - MCP_SERVER_URL: MCP server URL (default: "http://localhost:8080/mcp")
         - MCP_AUTH_TOKEN: Authentication token for MCP server (optional)
@@ -94,6 +106,7 @@ class AgentConfig:
         return cls(
             openai_api_key=openai_api_key,
             openai_model=os.getenv("OPENAI_MODEL", "openai:gpt-4o-mini"),
+            checker_model=os.getenv("CHECKER_MODEL", "openai:gpt-4o"),
             system_prompt=_DEFAULT_SYSTEM_PROMPT,
             mcp_server_url=os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp"),
             mcp_auth_token=os.getenv("MCP_AUTH_TOKEN"),
