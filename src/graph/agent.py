@@ -46,17 +46,45 @@ def create_agent_runnable(config: AgentConfig | None = None):
         # Extract messages from state
         messages = state.get("messages", [])
         
-        # Convert messages to dict format if needed
+        # Only send the most recent human message to avoid sending AI responses as user input
+        # Find the last human message
+        from langchain_core.messages import HumanMessage
+        
+        human_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
+        if not human_messages:
+            # Fallback: look for any message that might be from the user
+            for msg in reversed(messages):
+                if hasattr(msg, "type") and msg.type == "human":
+                    human_messages = [msg]
+                    break
+                elif isinstance(msg, dict) and msg.get("type") == "human":
+                    human_messages = [msg]
+                    break
+        
+        # Convert only the most recent human message to dict format
         message_dicts = []
-        for msg in messages:
+        if human_messages:
+            msg = human_messages[-1]  # Get the most recent human message
             if hasattr(msg, "dict"):
-                message_dicts.append(msg.dict())
+                msg_dict = msg.dict()
+                # Ensure role is set correctly
+                if "type" in msg_dict and msg_dict["type"] == "human":
+                    msg_dict["role"] = "user"
+                message_dicts.append(msg_dict)
             elif hasattr(msg, "model_dump"):
-                message_dicts.append(msg.model_dump())
+                msg_dict = msg.model_dump()
+                if "type" in msg_dict and msg_dict["type"] == "human":
+                    msg_dict["role"] = "user"
+                message_dicts.append(msg_dict)
             elif isinstance(msg, dict):
+                if msg.get("type") == "human":
+                    msg["role"] = "user"
                 message_dicts.append(msg)
             else:
                 message_dicts.append({"content": str(msg), "role": "user"})
+        else:
+            # No human messages found - this shouldn't happen, but handle gracefully
+            logger.warning("No human messages found in state, sending empty message list")
         
         # Get the assistant
         assistant = await client.assistants.get(agent_id)
