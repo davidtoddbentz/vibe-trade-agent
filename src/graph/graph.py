@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -19,7 +19,10 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_request: str
     checker_status: str | None  # SUCCESS, PARTIAL, CANNOT_FULFILL
+    checker_feedback: str | None  # Internal feedback from checker (not visible to user)
     iteration_count: int  # Track iterations to prevent infinite loops
+    ready_for_check: bool  # True if agent used tools in this run (did work)
+    cannot_fulfill_explained: bool  # Track if we've already explained CANNOT_FULFILL
 
 
 def _extract_user_request(messages: list[BaseMessage]) -> str:
@@ -55,7 +58,7 @@ def create_agent_graph(config: AgentConfig | None = None):
 
     from .mcp_client import get_mcp_tools
 
-    # Get MCP tools (but not check_work)
+    # Get MCP tools
     tools = []
     try:
         mcp_tools = get_mcp_tools(
@@ -66,7 +69,7 @@ def create_agent_graph(config: AgentConfig | None = None):
     except Exception as e:
         logger.warning(f"Could not load MCP tools: {e}", exc_info=True)
 
-    # Create main agent without check_work tool
+    # Create main agent - no special tools needed
     from .agent import handle_tool_errors
 
     model_name = config.openai_model.replace("openai:", "")
@@ -77,10 +80,19 @@ def create_agent_graph(config: AgentConfig | None = None):
         api_key=config.openai_api_key,
     )
 
+    # Add graph context to system prompt so agent understands its role
+    graph_context = (
+        "\n\nGRAPH CONTEXT:\n"
+        "You are part of a multi-agent system. When you complete work using tools, "
+        "your work will be automatically reviewed by a quality checker agent. "
+        "If the checker finds issues, you will receive feedback and should fix them. "
+        "If you need information from the user, ask naturally and wait for their response."
+    )
+
     main_agent = create_agent(
         model=llm,
         tools=tools,
-        system_prompt=config.system_prompt,  # No check_work instructions
+        system_prompt=config.system_prompt + graph_context,
         middleware=[handle_tool_errors],  # Handle tool errors gracefully
     )
 
@@ -88,11 +100,7 @@ def create_agent_graph(config: AgentConfig | None = None):
 
     # Define graph nodes
     async def run_main_agent(state: AgentState):
-        """Run the main agent to collect info and build strategy.
-
-        The ReAct agent will run its reasoning loop until it decides to respond.
-        We let it complete naturally, then check if it's asking a question or done.
-        """
+        """Run the main agent - it completes naturally when done."""
         iteration = state.get("iteration_count", 0)
         logger.info(f"Main agent running (iteration {iteration})")
 
@@ -105,17 +113,70 @@ def create_agent_graph(config: AgentConfig | None = None):
                     user_request = msg.content
                     break
 
-        # Run the main agent asynchronously (required for async middleware)
-        # The agent graph handles: think -> act (tools) -> observe -> think -> respond
-        result = await main_agent.ainvoke(state)
+        # Build messages for agent - inject checker feedback as internal context if present
+        agent_messages = list(state.get("messages", []))
+
+        checker_feedback = state.get("checker_feedback")
+        checker_status = state.get("checker_status")
+
+        if checker_feedback and checker_status:
+            from langchain_core.messages import SystemMessage
+
+            feedback_context = SystemMessage(
+                content=f"""Internal Quality Check Feedback (do not show this to the user):
+
+{checker_feedback}
+
+Your task:
+- If Status is SUCCESS: Confirm to the user that the strategy is complete and ready
+- If Status is PARTIAL: Fix the missing items and inform the user when done
+- If Status is CANNOT_FULFILL: Explain to the user why the request cannot be fulfilled. After explaining, do NOT attempt to fix or create anything - just explain the limitation.
+
+Respond naturally to the user - do not mention "quality check" or show this feedback."""
+            )
+            # Insert feedback before recent messages so agent sees it in context
+            agent_messages.insert(-1, feedback_context)
+
+        # Run the main agent - ReAct loop completes naturally
+        result = await main_agent.ainvoke({"messages": agent_messages})
+        messages = result.get("messages", [])
+
+        # Check: did the agent use tools in THIS run?
+        # We need to check only the NEW messages from this run
+        state_messages = state.get("messages", [])
+        # Get messages that were added in this run
+        new_messages = (
+            messages[len(state_messages) :]
+            if len(messages) > len(state_messages)
+            else messages[-10:]
+        )
+
+        used_tools = any(isinstance(msg, ToolMessage) for msg in new_messages)
+
+        # Check if agent is asking a question (in the new messages)
+        asking_question = False
+        if new_messages:
+            last_new_msg = new_messages[-1]
+            if isinstance(last_new_msg, AIMessage):
+                content = getattr(last_new_msg, "content", "")
+                if content.strip().endswith("?"):
+                    asking_question = True
+
+        # If we just explained CANNOT_FULFILL, mark it and don't check again
+        cannot_fulfill_explained = state.get("cannot_fulfill_explained", False)
+        if checker_status == "CANNOT_FULFILL":
+            cannot_fulfill_explained = True
 
         # Update state
-        # Clear checker_status when main agent runs - indicates new work was done
         new_state = {
-            "messages": result.get("messages", []),
+            "messages": result.get("messages", []),  # Agent's response (visible to user)
             "iteration_count": iteration + 1,
             "user_request": user_request,
-            "checker_status": None,  # Clear previous checker status
+            "checker_status": None,  # Clear after processing
+            "checker_feedback": None,  # Clear after processing
+            "cannot_fulfill_explained": cannot_fulfill_explained,
+            # Don't check again if we just explained CANNOT_FULFILL
+            "ready_for_check": used_tools and not asking_question and not cannot_fulfill_explained,
         }
 
         return new_state
@@ -156,42 +217,38 @@ def create_agent_graph(config: AgentConfig | None = None):
 
         logger.info(f"Checker status: {status}")
 
-        # Add checker feedback as a message
-        feedback_msg = AIMessage(content=f"Quality Check Results:\n{checker_result}")
-
-        return {"checker_status": status, "messages": [feedback_msg]}
+        # Store feedback internally - DO NOT add to messages (user shouldn't see this)
+        return {
+            "checker_status": status,
+            "checker_feedback": checker_result,  # Internal only
+            # No messages added - checker feedback is internal
+        }
 
     def should_continue(state: AgentState) -> Literal["checker", "__end__"]:
-        """Route based on ReAct agent's completion.
-
-        ReAct agent completes when it decides to respond. Check:
-        - If last message ends with '?' -> wait for user (needs more info)
-        - If checker_status is None -> go to checker (agent finished work, needs checking)
-        - If checker_status is set -> agent processed feedback, check again if no question
-        """
-        messages = state.get("messages", [])
-        if not messages:
+        """Route based on what agent actually did in this run."""
+        # If we've explained CANNOT_FULFILL, always end (don't check again)
+        if state.get("cannot_fulfill_explained"):
+            logger.info("CANNOT_FULFILL already explained - ending")
             return "__end__"
 
-        last_message = messages[-1]
-        checker_status = state.get("checker_status")
+        # Check if agent is asking a question (most recent message)
+        messages = state.get("messages", [])
+        if messages:
+            last_msg = messages[-1]
+            if isinstance(last_msg, AIMessage):
+                content = getattr(last_msg, "content", "")
+                if content.strip().endswith("?"):
+                    logger.info("Agent asked a question - waiting for user")
+                    return "__end__"
 
-        # If agent asked a question, always wait for user (needs more parameters)
-        if isinstance(last_message, AIMessage):
-            content = getattr(last_message, "content", str(last_message))
-            if content.strip().endswith("?"):
-                logger.info("Agent asked a question - waiting for user")
-                return "__end__"
-
-        # If checker_status is None, agent finished work - check it
-        if checker_status is None:
-            logger.info("Agent completed work - going to checker")
+        # Check if agent did work (used tools) and isn't asking
+        if state.get("ready_for_check"):
+            logger.info("Agent completed work with tools - going to checker")
             return "checker"
 
-        # Checker_status is set - agent processed feedback and tried to fix
-        # If it didn't ask a question, it's trying to fix automatically - check the fix
-        logger.info("Agent processed checker feedback - checking if fix worked")
-        return "checker"
+        # Default: wait for user (agent just responded without doing work)
+        logger.info("Agent responding without tools - waiting for user")
+        return "__end__"
 
     def checker_decision(state: AgentState) -> Literal["main_agent", "end"]:
         """Decide whether to go back to main agent or end.
