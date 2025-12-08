@@ -61,7 +61,7 @@ client = get_client(url="http://localhost:2024")
 async def main():
     async for chunk in client.runs.stream(
         None,  # Threadless run
-        "agent",  # Name of assistant (defined in langgraph.json)
+        "vibe-auto",  # Name of assistant (defined in langgraph.json)
         input={
             "messages": [{
                 "role": "human",
