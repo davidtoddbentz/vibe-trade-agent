@@ -125,7 +125,7 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
 
     # Mock MCP client with multiple tools
     mock_client = MagicMock()
-    
+
     # Mock get_strategy tool
     mock_get_strategy = MagicMock()
     mock_get_strategy.name = "get_strategy"
@@ -137,7 +137,7 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
             "attachments": [],
         }
     )
-    
+
     # Mock compile_strategy tool
     mock_compile_strategy = MagicMock()
     mock_compile_strategy.name = "compile_strategy"
@@ -148,7 +148,7 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
             "compiled": {"strategy_id": "test-123"},
         }
     )
-    
+
     mock_client.get_tools = AsyncMock(return_value=[mock_get_strategy, mock_compile_strategy])
     mock_mcp_client_class.return_value = mock_client
 
