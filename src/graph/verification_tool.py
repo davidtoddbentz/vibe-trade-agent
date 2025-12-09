@@ -63,7 +63,7 @@ def _normalize_response(response: Any) -> dict[str, Any]:
             # If it's not JSON, wrap it
             return {"raw_response": response}
     elif hasattr(response, "__dict__"):
-        return dict(response)
+        return response.__dict__
     else:
         return {"raw_response": str(response)}
 

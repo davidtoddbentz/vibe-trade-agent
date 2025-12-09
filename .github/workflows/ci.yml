@@ -53,75 +53,11 @@ jobs:
     - name: Install dependencies
       run: uv sync --all-groups
     
-    - name: Run tests
+    - name: Run tests with coverage
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'test-key' }}
         LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY || 'test-key' }}
-      run: uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=xml -v
-    
-    - name: Upload coverage artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-reports
-        path: |
-          coverage.xml
-          .coverage
-        retention-days: 1
-
-  coverage:
-    runs-on: ubuntu-latest
-    name: Coverage Check
-    needs: test
-
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        version: "latest"
-    
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-    
-    - name: Install dependencies
-      run: uv sync --all-groups
-    
-    - name: Install coverage
-      run: uv pip install coverage
-    
-    - name: Download coverage artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-reports
-    
-    - name: Check coverage threshold
-      run: uv run coverage report --fail-under=60
-    
-    - name: Generate coverage XML
-      run: uv run coverage xml
-    
-    - name: Upload coverage artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-reports
-        path: |
-          coverage.xml
-          .coverage
-        retention-days: 1
-
-  codecov:
-    runs-on: ubuntu-latest
-    name: Upload Coverage
-    needs: [test, coverage]
-
-    steps:
-    - name: Download coverage artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-reports
+      run: uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=60 -v
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4

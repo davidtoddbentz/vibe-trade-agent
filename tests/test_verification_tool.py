@@ -3,6 +3,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from src.graph.verification_tool import (
     VerificationResult,
     _normalize_response,
@@ -114,6 +116,7 @@ def test_verify_strategy_error(mock_verify_impl, mock_asyncio_run):
     )
 
 
+@pytest.mark.asyncio
 @patch("src.graph.verification_tool.MultiServerMCPClient")
 @patch("src.graph.verification_tool.ChatOpenAI")
 async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
