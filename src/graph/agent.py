@@ -112,23 +112,72 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if not tools:
         logger.warning("No tools available - agent will have limited functionality")
 
-    from langchain_openai import ChatOpenAI
+    # Extract model and system prompt from LangSmith prompt chain
+    # The chain structure: prompt -> model (RunnableSequence)
+    prompt_chain = config.langsmith_prompt_chain
 
-    # Create LLM with cost limits
-    llm = ChatOpenAI(
-        model=model_name,
-        temperature=0,
-        max_tokens=config.max_tokens,
-        api_key=config.openai_api_key,
-    )
+    # Get the model from the chain (last step)
+    model = None
+    if hasattr(prompt_chain, 'steps') and len(prompt_chain.steps) > 0:
+        model = prompt_chain.steps[-1]
+    elif hasattr(prompt_chain, 'last'):
+        model = prompt_chain.last
+
+    if model is None:
+        raise ValueError("Could not extract model from LangSmith prompt chain")
+
+    # Extract system prompt from the prompt template (first step)
+    system_prompt = None
+    prompt_template = None
+    if hasattr(prompt_chain, 'steps') and len(prompt_chain.steps) > 0:
+        prompt_template = prompt_chain.steps[0]
+    elif hasattr(prompt_chain, 'first'):
+        prompt_template = prompt_chain.first
+
+    if prompt_template:
+        # Extract the actual prompt text from the template
+        if hasattr(prompt_template, 'messages'):
+            # Chat prompt template - extract system message
+            for msg in prompt_template.messages:
+                if hasattr(msg, 'prompt') and hasattr(msg.prompt, 'template'):
+                    system_prompt = msg.prompt.template
+                    break
+                elif hasattr(msg, 'content'):
+                    # If it's a simple content string
+                    if isinstance(msg.content, str):
+                        system_prompt = msg.content
+                        break
+        elif hasattr(prompt_template, 'template'):
+            system_prompt = prompt_template.template
+        elif isinstance(prompt_template, str):
+            system_prompt = prompt_template
+
+    # If we couldn't extract a system prompt, log a warning
+    if not system_prompt:
+        logger.warning("Could not extract system prompt from LangSmith chain, using None")
+
+    # Update model settings if needed (max_tokens, etc.)
+    # Note: RunnableBinding objects from LangSmith don't support direct attribute modification
+    # The model from LangSmith should already be configured correctly, so we skip modification
+    model_type_name = type(model).__name__
+    if "RunnableBinding" not in model_type_name:
+        # Only try to modify if it's not a RunnableBinding
+        try:
+            if hasattr(model, 'max_tokens'):
+                model.max_tokens = config.max_tokens
+            elif hasattr(model, 'max_output_tokens'):
+                model.max_output_tokens = config.max_tokens
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.debug(f"Could not set max_tokens on model ({model_type_name}): {e}")
+            # Continue without setting max_tokens - the model may already be configured
 
     # create_agent accepts model as string or LLM instance
     # Use middleware to handle tool errors as per LangChain docs
     # wrap_tool_call handles both sync and async functions
     agent = create_agent(
-        model=llm,  # Pass LLM instance instead of string
+        model=model,  # Use model from LangSmith prompt chain
         tools=tools,
-        system_prompt=config.system_prompt,
+        system_prompt=system_prompt,  # Use system prompt from LangSmith
         middleware=[handle_tool_errors],  # Handle tool errors gracefully
     )
 

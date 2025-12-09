@@ -8,6 +8,7 @@ import pytest
 # Set test environment variables
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("LANGSMITH_API_KEY", "test-key")
+os.environ.setdefault("LANGSMITH_PROMPT_NAME", "test-prompt")
 
 
 @pytest.fixture

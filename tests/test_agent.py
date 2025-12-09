@@ -17,10 +17,20 @@ def test_create_agent_runnable_missing_api_key(monkeypatch):
 
 def test_create_agent_runnable_with_config(mock_openai_api_key):
     """Test agent creation with explicit config."""
+    # Create mock prompt chain with steps
+    mock_model = MagicMock()
+    mock_prompt_template = MagicMock()
+    mock_prompt_template.template = "Test prompt"
+
+    mock_prompt_chain = MagicMock()
+    mock_prompt_chain.steps = [mock_prompt_template, mock_model]
+    mock_prompt_chain.last = mock_model
+    mock_prompt_chain.first = mock_prompt_template
+
     config = AgentConfig(
         openai_api_key="test-key",
         openai_model="openai:gpt-4",
-        system_prompt="Test prompt",
+        langsmith_prompt_chain=mock_prompt_chain,
     )
 
     with patch("src.graph.agent.create_agent") as mock_create_agent:
@@ -30,23 +40,30 @@ def test_create_agent_runnable_with_config(mock_openai_api_key):
         with patch("src.graph.agent.get_mcp_tools", return_value=[]):
             with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
                 mock_verify_tool.return_value = MagicMock()
-                with patch("langchain_openai.ChatOpenAI") as mock_chat_openai:
-                    mock_llm = MagicMock()
-                    mock_chat_openai.return_value = mock_llm
-                    agent = create_agent_runnable(config)
-                    assert agent == mock_agent
-                    mock_create_agent.assert_called_once()
-                    call_args = mock_create_agent.call_args
-                    # Now we pass ChatOpenAI instance, not string
-                    assert call_args.kwargs.get("model") == mock_llm
-                    assert call_args.kwargs.get("system_prompt") == "Test prompt"
-                    # Verify ChatOpenAI was called with correct model name
-                    mock_chat_openai.assert_called_once()
-                    assert mock_chat_openai.call_args.kwargs["model"] == "gpt-4"
+                agent = create_agent_runnable(config)
+                assert agent == mock_agent
+                mock_create_agent.assert_called_once()
+                call_args = mock_create_agent.call_args
+                # Model should come from prompt chain
+                assert call_args.kwargs.get("model") == mock_model
+                assert call_args.kwargs.get("system_prompt") == "Test prompt"
 
 
-def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url):
+def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url, monkeypatch):
     """Test successful agent creation."""
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
+
+    # Create mock prompt chain
+    mock_model = MagicMock()
+    mock_prompt_template = MagicMock()
+    mock_prompt_template.template = "System prompt"
+
+    mock_prompt_chain = MagicMock()
+    mock_prompt_chain.steps = [mock_prompt_template, mock_model]
+    mock_prompt_chain.last = mock_model
+    mock_prompt_chain.first = mock_prompt_template
+
     with patch("src.graph.agent.create_agent") as mock_create_agent:
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
@@ -54,13 +71,31 @@ def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url)
         with patch("src.graph.agent.get_mcp_tools", return_value=[]):
             with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
                 mock_verify_tool.return_value = MagicMock()
-                agent = create_agent_runnable()
-                assert agent == mock_agent
-                mock_create_agent.assert_called_once()
+                with patch("src.graph.config.Client") as mock_client_class:
+                    mock_client = MagicMock()
+                    mock_client_class.return_value = mock_client
+                    mock_client.pull_prompt.return_value = mock_prompt_chain
+
+                    agent = create_agent_runnable()
+                    assert agent == mock_agent
+                    mock_create_agent.assert_called_once()
 
 
-def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tools):
+def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tools, monkeypatch):
     """Test agent creation with MCP tools."""
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
+
+    # Create mock prompt chain
+    mock_model = MagicMock()
+    mock_prompt_template = MagicMock()
+    mock_prompt_template.template = "System prompt"
+
+    mock_prompt_chain = MagicMock()
+    mock_prompt_chain.steps = [mock_prompt_template, mock_model]
+    mock_prompt_chain.last = mock_model
+    mock_prompt_chain.first = mock_prompt_template
+
     with patch("src.graph.agent.create_agent") as mock_create_agent:
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
@@ -68,9 +103,14 @@ def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tool
         with patch("src.graph.agent.get_mcp_tools", return_value=mock_mcp_tools):
             with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
                 mock_verify_tool.return_value = MagicMock()
-                agent = create_agent_runnable()
-                assert agent == mock_agent
-                # Verify tools were passed to create_agent
-                call_args = mock_create_agent.call_args
-                tools = call_args.kwargs.get("tools", [])
-                assert len(tools) > 0  # Should have MCP tools and verification tool
+                with patch("src.graph.config.Client") as mock_client_class:
+                    mock_client = MagicMock()
+                    mock_client_class.return_value = mock_client
+                    mock_client.pull_prompt.return_value = mock_prompt_chain
+
+                    agent = create_agent_runnable()
+                    assert agent == mock_agent
+                    # Verify tools were passed to create_agent
+                    call_args = mock_create_agent.call_args
+                    tools = call_args.kwargs.get("tools", [])
+                    assert len(tools) > 0  # Should have MCP tools and verification tool
