@@ -152,22 +152,23 @@ ATTACHED CARDS:
 SCHEMA VALIDATION ISSUES (only check these):
 {json.dumps([issue for issue in compile_dict.get("issues", []) if issue.get("code") in ["SLOT_VALIDATION_ERROR", "SCHEMA_NOT_FOUND", "MISSING_CONTEXT", "CARD_NOT_FOUND"]], indent=2)}
 
-Analyze ONLY these two things:
-1. Does the strategy implement what the user requested? (Check entry logic, exit logic, gates, overlays, symbols, timeframes, conditions - only what the user explicitly asked for)
-2. Are there schema validation errors? (Check only for SLOT_VALIDATION_ERROR, SCHEMA_NOT_FOUND, MISSING_CONTEXT, CARD_NOT_FOUND)
+VERIFICATION RULES:
+1. Check ONLY if the strategy implements what the user EXPLICITLY mentioned in the conversation context
+2. Check ONLY for schema validation errors listed above
+3. If user mentioned entry logic, check if entry cards match (symbol, timeframe, direction, conditions)
+4. If user mentioned exit logic, check if exit cards match (only if user explicitly requested exits)
+5. If user mentioned gates/overlays, check if they match (only if user explicitly requested them)
+6. DO NOT mention missing exit cards, gates, or overlays unless the user EXPLICITLY requested them
+7. DO NOT mention completeness, operational status, or risk management
 
-DO NOT check for:
-- Missing exit cards (unless user explicitly requested them)
-- Missing gates/overlays (unless user explicitly requested them)
-- Compilation warnings (only check errors)
-- Whether the strategy is "complete" or "operational"
-- Risk management concerns
+STATUS DETERMINATION:
+- "Complete": Strategy matches ALL user-requested components AND no schema errors
+- "Partial": Strategy matches SOME user-requested components OR has schema errors (but is implementable)
+- "Not Implementable": Strategy doesn't match user request OR has critical schema errors that prevent implementation
 
 Return your analysis as JSON with:
-- "status": one of "Complete" (matches user request and no schema errors), "Partial" (partially matches but missing user-requested components or has schema errors), or "Not Implementable" (doesn't match user request or has critical schema errors)
-- "notes": a detailed explanation focusing ONLY on alignment with user request and schema validation issues
-
-Be specific about what doesn't match the user's request or what schema errors exist."""
+- "status": one of "Complete", "Partial", or "Not Implementable"
+- "notes": Brief, clear explanation. If Complete, state what matches. If not Complete, list ONLY what doesn't match user request or schema errors. Do not be contradictory."""
 
     response = await llm.ainvoke(analysis_prompt)
     response_text = response.content if hasattr(response, "content") else str(response)
