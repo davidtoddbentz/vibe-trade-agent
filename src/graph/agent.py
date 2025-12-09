@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from .config import AgentConfig
 from .mcp_client import get_mcp_tools
+from .verification_tool import create_verification_tool
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,10 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if config is None:
         config = AgentConfig.from_env()
 
+    # Parse model string - create_agent accepts model as string or LLM instance
+    # Format: "openai:gpt-4o-mini" or "gpt-4o-mini"
+    model_name = config.openai_model.replace("openai:", "")
+
     # Get MCP tools
     tools = []
     try:
@@ -90,12 +95,22 @@ def create_agent_runnable(config: AgentConfig | None = None):
         logger.warning(f"Could not load MCP tools: {e}", exc_info=True)
         logger.info("Continuing without MCP tools...")
 
+    # Add verification tool
+    try:
+        verification_tool = create_verification_tool(
+            mcp_url=config.mcp_server_url,
+            mcp_auth_token=config.mcp_auth_token,
+            openai_api_key=config.openai_api_key,
+            model_name=model_name,
+        )
+        tools.append(verification_tool)
+        logger.info("Added verification tool")
+    except Exception as e:
+        logger.warning(f"Could not create verification tool: {e}", exc_info=True)
+        logger.info("Continuing without verification tool...")
+
     if not tools:
         logger.warning("No tools available - agent will have limited functionality")
-
-    # Parse model string - create_agent accepts model as string or LLM instance
-    # Format: "openai:gpt-4o-mini" or "gpt-4o-mini"
-    model_name = config.openai_model.replace("openai:", "")
 
     from langchain_openai import ChatOpenAI
 
