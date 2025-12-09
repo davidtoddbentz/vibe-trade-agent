@@ -52,11 +52,17 @@ def test_agent_config_from_env_success(monkeypatch):
         config = AgentConfig.from_env()
 
         assert config.openai_api_key == "test-key"
+        assert config.langsmith_api_key == "test-langsmith-key"
+        assert config.langsmith_prompt_name == "test-prompt"
+        assert config.langsmith_verify_prompt_name == "verify-prompt"  # Default value
         assert config.openai_model == "openai:gpt-4"
         assert config.langsmith_prompt_chain == mock_prompt_chain
         assert config.mcp_server_url == "http://custom:8080/mcp"
         assert config.mcp_auth_token == "test-token"
-        mock_client.pull_prompt.assert_called_once_with("test-prompt", include_model=True)
+        # Should pull both main prompt and verify prompt
+        assert mock_client.pull_prompt.call_count == 2
+        mock_client.pull_prompt.assert_any_call("test-prompt", include_model=True)
+        mock_client.pull_prompt.assert_any_call("verify-prompt", include_model=False)
 
 
 def test_agent_config_defaults(monkeypatch):
@@ -67,6 +73,7 @@ def test_agent_config_defaults(monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     monkeypatch.delenv("MCP_SERVER_URL", raising=False)
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("LANGSMITH_VERIFY_PROMPT_NAME", raising=False)
 
     mock_prompt_chain = MagicMock()
     with patch("src.graph.config.Client") as mock_client_class:
@@ -77,6 +84,7 @@ def test_agent_config_defaults(monkeypatch):
         config = AgentConfig.from_env()
 
         assert config.openai_api_key == "test-key"
+        assert config.langsmith_verify_prompt_name == "verify-prompt"  # Default value
         assert config.openai_model == "openai:gpt-4o-mini"
         assert config.mcp_server_url == "http://localhost:8080/mcp"
         assert config.mcp_auth_token is None
@@ -87,6 +95,8 @@ def test_agent_config_direct_creation():
     mock_prompt_chain = MagicMock()
     config = AgentConfig(
         openai_api_key="direct-key",
+        langsmith_api_key="langsmith-key",
+        langsmith_prompt_name="test-prompt",
         openai_model="openai:gpt-4",
         langsmith_prompt_chain=mock_prompt_chain,
         mcp_server_url="http://custom:8080/mcp",
@@ -94,6 +104,8 @@ def test_agent_config_direct_creation():
     )
 
     assert config.openai_api_key == "direct-key"
+    assert config.langsmith_api_key == "langsmith-key"
+    assert config.langsmith_prompt_name == "test-prompt"
     assert config.openai_model == "openai:gpt-4"
     assert config.langsmith_prompt_chain == mock_prompt_chain
     assert config.mcp_server_url == "http://custom:8080/mcp"

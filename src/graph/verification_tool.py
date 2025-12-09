@@ -122,6 +122,20 @@ Return your analysis as JSON with:
 Be specific about what doesn't match the user's request or what schema errors exist."""
 
 
+def _load_latest_verify_prompt(
+    langsmith_api_key: str, langsmith_verify_prompt_name: str
+) -> Any:
+    """Load the latest verify prompt from LangSmith."""
+    try:
+        from langsmith import Client
+
+        client = Client(api_key=langsmith_api_key)
+        return client.pull_prompt(langsmith_verify_prompt_name, include_model=False)
+    except Exception as e:
+        logger.warning(f"Could not load verify prompt from LangSmith: {e}")
+        return None
+
+
 async def _verify_strategy_impl(
     strategy_id: str,
     conversation_context: str,
@@ -129,7 +143,8 @@ async def _verify_strategy_impl(
     mcp_auth_token: str | None,
     openai_api_key: str,
     model_name: str = "gpt-4o-mini",
-    langsmith_verify_prompt: Any = None,
+    langsmith_api_key: str | None = None,
+    langsmith_verify_prompt_name: str = "verify-prompt",
 ) -> VerificationResult:
     """Internal implementation of strategy verification."""
     client = _create_mcp_client(mcp_url, mcp_auth_token)
@@ -193,6 +208,13 @@ async def _verify_strategy_impl(
         ],
         indent=2,
     )
+
+    # Load latest prompt from LangSmith (pulls fresh each time)
+    langsmith_verify_prompt = None
+    if langsmith_api_key:
+        langsmith_verify_prompt = _load_latest_verify_prompt(
+            langsmith_api_key, langsmith_verify_prompt_name
+        )
 
     # Use LangSmith prompt template or fall back to default
     if langsmith_verify_prompt:
@@ -300,7 +322,8 @@ def create_verification_tool(
     mcp_auth_token: str | None,
     openai_api_key: str,
     model_name: str = "gpt-4o-mini",
-    langsmith_verify_prompt: Any = None,
+    langsmith_api_key: str | None = None,
+    langsmith_verify_prompt_name: str = "verify-prompt",
 ):
     """Create a verification tool for analyzing strategies.
 
@@ -309,7 +332,8 @@ def create_verification_tool(
         mcp_auth_token: Authentication token for MCP server
         openai_api_key: OpenAI API key for LLM analysis
         model_name: OpenAI model to use for analysis
-        langsmith_verify_prompt: LangSmith prompt template for verification (optional)
+        langsmith_api_key: LangSmith API key (for dynamic prompt reloading)
+        langsmith_verify_prompt_name: Name of the LangSmith verify prompt (default: "verify-prompt")
 
     Returns:
         LangChain tool for strategy verification
@@ -353,7 +377,8 @@ def create_verification_tool(
                     mcp_auth_token=mcp_auth_token,
                     openai_api_key=openai_api_key,
                     model_name=model_name,
-                    langsmith_verify_prompt=langsmith_verify_prompt,
+                    langsmith_api_key=langsmith_api_key,
+                    langsmith_verify_prompt_name=langsmith_verify_prompt_name,
                 )
             )
             return json.dumps({"status": result.status, "notes": result.notes}, indent=2)

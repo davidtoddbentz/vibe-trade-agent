@@ -23,4 +23,6 @@ if hasattr(agent, "nodes") and "tools" in agent.nodes:
         # Set handle_tool_errors=True to catch all exceptions including ToolException
         builtins.object.__setattr__(tool_node, "_handle_tool_errors", True)
 
+# Expose the agent (wrapper or base) directly to LangGraph
+# The DynamicPromptAgent wrapper should pass validation via __class__ property
 graph = agent

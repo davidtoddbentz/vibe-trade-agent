@@ -18,9 +18,11 @@ class AgentConfig:
 
     openai_api_key: str
     langsmith_api_key: str
+    langsmith_prompt_name: str  # Name of main prompt in LangSmith (for dynamic reloading)
+    langsmith_verify_prompt_name: str = "verify-prompt"  # Name of verification prompt in LangSmith
     openai_model: str = "openai:gpt-4o-mini"
     langsmith_prompt_chain: Any = None  # RunnableSequence from LangSmith
-    langsmith_verify_prompt: Any = None  # Prompt template from LangSmith for verification
+    langsmith_verify_prompt: Any = None  # Prompt template from LangSmith for verification (deprecated, kept for compatibility)
     mcp_server_url: str = "http://localhost:8080/mcp"
     mcp_auth_token: str | None = None
     max_tokens: int = 2000  # Limit output tokens per response (costs ~$0.0012 per 2k tokens)
@@ -79,8 +81,10 @@ class AgentConfig:
             openai_api_key=openai_api_key,
             openai_model=os.getenv("OPENAI_MODEL", "openai:gpt-4o-mini"),
             langsmith_api_key=langsmith_api_key,
+            langsmith_prompt_name=langsmith_prompt_name,
+            langsmith_verify_prompt_name=langsmith_verify_prompt_name,
             langsmith_prompt_chain=prompt_chain,
-            langsmith_verify_prompt=verify_prompt,
+            langsmith_verify_prompt=verify_prompt,  # Deprecated, kept for compatibility
             mcp_server_url=os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp"),
             mcp_auth_token=os.getenv("MCP_AUTH_TOKEN"),
             max_tokens=int(os.getenv("MAX_TOKENS", "2000")),
