@@ -97,38 +97,15 @@ def _load_latest_prompt_from_langsmith(
         include_model: Whether to include the model in the chain (default: True)
 
     Returns:
-        Tuple of (prompt_chain, revision_info) where revision_info is extracted but
-        not currently used (kept for potential future use). Returns (None, None) if loading fails.
+        Prompt chain from LangSmith. Raises ValueError if loading fails.
     """
-    try:
-        from langsmith import Client
+    from langsmith import Client
 
-        client = Client(api_key=langsmith_api_key)
-        prompt_chain = client.pull_prompt(prompt_name, include_model=include_model)
-
-        # Try to extract revision/version info from the prompt chain
-        revision_info = {}
-        if hasattr(prompt_chain, 'metadata'):
-            revision_info = getattr(prompt_chain, 'metadata', {})
-        elif hasattr(prompt_chain, 'revision'):
-            revision_info['revision'] = prompt_chain.revision
-        elif hasattr(prompt_chain, 'version'):
-            revision_info['version'] = prompt_chain.version
-
-        # Also check if the chain has a steps attribute and check first step
-        if hasattr(prompt_chain, 'steps') and len(prompt_chain.steps) > 0:
-            first_step = prompt_chain.steps[0]
-            if hasattr(first_step, 'metadata'):
-                revision_info.update(getattr(first_step, 'metadata', {}))
-            if hasattr(first_step, 'revision'):
-                revision_info['revision'] = first_step.revision
-            if hasattr(first_step, 'version'):
-                revision_info['version'] = first_step.version
-
-        return prompt_chain, revision_info
-    except Exception as e:
-        logger.warning(f"Could not load prompt '{prompt_name}' from LangSmith: {e}")
-        return None, None
+    client = Client(api_key=langsmith_api_key)
+    prompt_chain = client.pull_prompt(prompt_name, include_model=include_model)
+    if not prompt_chain:
+        raise ValueError(f"LangSmith returned None for prompt '{prompt_name}'")
+    return prompt_chain
 
 
 class DynamicPromptAgent:
@@ -195,12 +172,13 @@ class DynamicPromptAgent:
         Checks LangSmith for the latest prompt and recreates the agent if it has changed.
         """
         # Load latest prompt chain from LangSmith
-        latest_chain, _ = _load_latest_prompt_from_langsmith(
-            self._langsmith_api_key, self._langsmith_prompt_name, include_model=True
-        )
-
-        if not latest_chain:
-            # If we can't load, keep using current agent
+        # Raises ValueError if prompt cannot be loaded
+        try:
+            latest_chain = _load_latest_prompt_from_langsmith(
+                self._langsmith_api_key, self._langsmith_prompt_name, include_model=True
+            )
+        except Exception as e:
+            logger.warning(f"Could not reload prompt from LangSmith: {e}, keeping existing agent")
             return False
 
         # Extract prompt text
