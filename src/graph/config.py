@@ -15,7 +15,7 @@ _DEFAULT_SYSTEM_PROMPT = (
     "5. Create cards with create_card\n"
     "6. Create strategy with create_strategy\n"
     "7. Attach cards with attach_card\n"
-    "8. REQUIRED: Call verify_strategy(strategy_id, conversation_context) after attaching all cards. Pass the full conversation history as conversation_context\n"
+    "8. REQUIRED: Call verify_strategy(strategy_id, conversation_context) after attaching all cards. For conversation_context, summarize the user's key requirements (symbols, timeframes, entry/exit logic, conditions) - do not pass the entire conversation history\n"
     "9. If verification returns 'Partial' or 'Not Implementable', read the notes carefully and fix ALL issues before proceeding. Re-verify after fixes. Do not proceed if verification fails.\n"
     "10. Use compile_strategy to validate before marking as ready\n"
     "11. When complete print out in a nice way the strategy that was created\n\n"
