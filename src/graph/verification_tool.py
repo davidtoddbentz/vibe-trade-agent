@@ -83,6 +83,45 @@ async def _call_mcp_tool(
     return _normalize_response(result)
 
 
+def _get_default_verification_prompt(
+    user_request: str,
+    strategy_details: dict,
+    attached_cards: str,
+    schema_validation_issues: str,
+) -> str:
+    """Get the default verification prompt (fallback)."""
+    return f"""You are analyzing a trading strategy to verify if it matches the user's requirements and schema validation.
+
+USER REQUEST (from conversation context):
+{user_request}
+
+STRATEGY DETAILS:
+{json.dumps(strategy_details, indent=2)}
+
+ATTACHED CARDS:
+{attached_cards}
+
+SCHEMA VALIDATION ISSUES (only check these):
+{schema_validation_issues}
+
+Analyze ONLY these two things:
+1. Does the strategy implement what the user requested? (Check entry logic, exit logic, gates, overlays, symbols, timeframes, conditions - only what the user explicitly asked for)
+2. Are there schema validation errors? (Check only for SLOT_VALIDATION_ERROR, SCHEMA_NOT_FOUND, MISSING_CONTEXT, CARD_NOT_FOUND)
+
+DO NOT check for:
+- Missing exit cards (unless user explicitly requested them)
+- Missing gates/overlays (unless user explicitly requested them)
+- Compilation warnings (only check errors)
+- Whether the strategy is "complete" or "operational"
+- Risk management concerns
+
+Return your analysis as JSON with:
+- "status": one of "Complete" (matches user request and no schema errors), "Partial" (partially matches but missing user-requested components or has schema errors), or "Not Implementable" (doesn't match user request or has critical schema errors)
+- "notes": a detailed explanation focusing ONLY on alignment with user request and schema validation issues
+
+Be specific about what doesn't match the user's request or what schema errors exist."""
+
+
 async def _verify_strategy_impl(
     strategy_id: str,
     conversation_context: str,
@@ -90,6 +129,7 @@ async def _verify_strategy_impl(
     mcp_auth_token: str | None,
     openai_api_key: str,
     model_name: str = "gpt-4o-mini",
+    langsmith_verify_prompt: Any = None,
 ) -> VerificationResult:
     """Internal implementation of strategy verification."""
     client = _create_mcp_client(mcp_url, mcp_auth_token)
@@ -133,43 +173,98 @@ async def _verify_strategy_impl(
         logger.warning(f"Could not compile strategy: {e}")
         compile_dict = {"status_hint": "error", "issues": [{"message": str(e)}]}
 
-    # Use LLM to analyze strategy against user request
+    # Format input variables for the LangSmith prompt
+    user_request = conversation_context
+
+    strategy_details = {
+        "strategy_id": strategy_id,
+        "name": strategy_dict.get("name", "Unknown"),
+        "universe": strategy_dict.get("universe", []),
+    }
+
+    attached_cards = json.dumps(cards_info, indent=2)
+
+    schema_validation_issues = json.dumps(
+        [
+            issue
+            for issue in compile_dict.get("issues", [])
+            if issue.get("code")
+            in ["SLOT_VALIDATION_ERROR", "SCHEMA_NOT_FOUND", "MISSING_CONTEXT", "CARD_NOT_FOUND"]
+        ],
+        indent=2,
+    )
+
+    # Use LangSmith prompt template or fall back to default
+    if langsmith_verify_prompt:
+        try:
+            # Invoke the prompt with variables
+            # The prompt template should have format() or invoke() method
+            if hasattr(langsmith_verify_prompt, "format"):
+                formatted_prompt = langsmith_verify_prompt.format(
+                    user_request=user_request,
+                    strategy_details=json.dumps(strategy_details, indent=2),
+                    attached_cards=attached_cards,
+                    schema_validation_issues=schema_validation_issues,
+                )
+            elif hasattr(langsmith_verify_prompt, "invoke"):
+                # If it's a Runnable, we can invoke it with a dict
+                result = langsmith_verify_prompt.invoke(
+                    {
+                        "user_request": user_request,
+                        "strategy_details": json.dumps(strategy_details, indent=2),
+                        "attached_cards": attached_cards,
+                        "schema_validation_issues": schema_validation_issues,
+                    }
+                )
+                # Extract the prompt text if it's a message
+                if hasattr(result, "content"):
+                    formatted_prompt = result.content
+                elif isinstance(result, str):
+                    formatted_prompt = result
+                else:
+                    formatted_prompt = str(result)
+            else:
+                # Fallback: try to get template string and format manually
+                if hasattr(langsmith_verify_prompt, "template"):
+                    template_str = langsmith_verify_prompt.template
+                elif (
+                    hasattr(langsmith_verify_prompt, "messages")
+                    and len(langsmith_verify_prompt.messages) > 0
+                ):
+                    # Get the first message's prompt template
+                    msg = langsmith_verify_prompt.messages[0]
+                    if hasattr(msg, "prompt") and hasattr(msg.prompt, "template"):
+                        template_str = msg.prompt.template
+                    else:
+                        raise ValueError("Could not extract template from LangSmith prompt")
+                else:
+                    raise ValueError("Could not extract template from LangSmith prompt")
+
+                # Format the template string manually
+                formatted_prompt = template_str.format(
+                    user_request=user_request,
+                    strategy_details=json.dumps(strategy_details, indent=2),
+                    attached_cards=attached_cards,
+                    schema_validation_issues=schema_validation_issues,
+                )
+
+            logger.info("Using LangSmith verify prompt for verification")
+        except Exception as e:
+            logger.warning(f"Could not use LangSmith verify prompt: {e}")
+            logger.info("Falling back to default prompt")
+            # Fallback to default prompt
+            formatted_prompt = _get_default_verification_prompt(
+                user_request, strategy_details, attached_cards, schema_validation_issues
+            )
+    else:
+        # No LangSmith prompt, use default prompt
+        formatted_prompt = _get_default_verification_prompt(
+            user_request, strategy_details, attached_cards, schema_validation_issues
+        )
+
+    # Use LLM to analyze strategy
     llm = ChatOpenAI(model=model_name, temperature=0, api_key=openai_api_key)
-
-    analysis_prompt = f"""You are analyzing a trading strategy to verify if it matches the user's requirements and schema validation.
-
-USER REQUEST (from conversation context):
-{conversation_context}
-
-STRATEGY DETAILS:
-- Strategy ID: {strategy_id}
-- Strategy Name: {strategy_dict.get("name", "Unknown")}
-- Universe: {strategy_dict.get("universe", [])}
-
-ATTACHED CARDS:
-{json.dumps(cards_info, indent=2)}
-
-SCHEMA VALIDATION ISSUES (only check these):
-{json.dumps([issue for issue in compile_dict.get("issues", []) if issue.get("code") in ["SLOT_VALIDATION_ERROR", "SCHEMA_NOT_FOUND", "MISSING_CONTEXT", "CARD_NOT_FOUND"]], indent=2)}
-
-Analyze ONLY these two things:
-1. Does the strategy implement what the user requested? (Check entry logic, exit logic, gates, overlays, symbols, timeframes, conditions - only what the user explicitly asked for)
-2. Are there schema validation errors? (Check only for SLOT_VALIDATION_ERROR, SCHEMA_NOT_FOUND, MISSING_CONTEXT, CARD_NOT_FOUND)
-
-DO NOT check for:
-- Missing exit cards (unless user explicitly requested them)
-- Missing gates/overlays (unless user explicitly requested them)
-- Compilation warnings (only check errors)
-- Whether the strategy is "complete" or "operational"
-- Risk management concerns
-
-Return your analysis as JSON with:
-- "status": one of "Complete" (matches user request and no schema errors), "Partial" (partially matches but missing user-requested components or has schema errors), or "Not Implementable" (doesn't match user request or has critical schema errors)
-- "notes": a detailed explanation focusing ONLY on alignment with user request and schema validation issues
-
-Be specific about what doesn't match the user's request or what schema errors exist."""
-
-    response = await llm.ainvoke(analysis_prompt)
+    response = await llm.ainvoke(formatted_prompt)
     response_text = response.content if hasattr(response, "content") else str(response)
 
     # Parse LLM response (it should return JSON)
@@ -205,6 +300,7 @@ def create_verification_tool(
     mcp_auth_token: str | None,
     openai_api_key: str,
     model_name: str = "gpt-4o-mini",
+    langsmith_verify_prompt: Any = None,
 ):
     """Create a verification tool for analyzing strategies.
 
@@ -213,6 +309,7 @@ def create_verification_tool(
         mcp_auth_token: Authentication token for MCP server
         openai_api_key: OpenAI API key for LLM analysis
         model_name: OpenAI model to use for analysis
+        langsmith_verify_prompt: LangSmith prompt template for verification (optional)
 
     Returns:
         LangChain tool for strategy verification
@@ -256,6 +353,7 @@ def create_verification_tool(
                     mcp_auth_token=mcp_auth_token,
                     openai_api_key=openai_api_key,
                     model_name=model_name,
+                    langsmith_verify_prompt=langsmith_verify_prompt,
                 )
             )
             return json.dumps({"status": result.status, "notes": result.notes}, indent=2)

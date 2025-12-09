@@ -102,6 +102,7 @@ def create_agent_runnable(config: AgentConfig | None = None):
             mcp_auth_token=config.mcp_auth_token,
             openai_api_key=config.openai_api_key,
             model_name=model_name,
+            langsmith_verify_prompt=config.langsmith_verify_prompt,
         )
         tools.append(verification_tool)
         logger.info("Added verification tool")
