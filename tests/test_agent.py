@@ -28,19 +28,21 @@ def test_create_agent_runnable_with_config(mock_openai_api_key):
         mock_create_agent.return_value = mock_agent
 
         with patch("src.graph.agent.get_mcp_tools", return_value=[]):
-            with patch("langchain_openai.ChatOpenAI") as mock_chat_openai:
-                mock_llm = MagicMock()
-                mock_chat_openai.return_value = mock_llm
-                agent = create_agent_runnable(config)
-                assert agent == mock_agent
-                mock_create_agent.assert_called_once()
-                call_args = mock_create_agent.call_args
-                # Now we pass ChatOpenAI instance, not string
-                assert call_args.kwargs.get("model") == mock_llm
-                assert call_args.kwargs.get("system_prompt") == "Test prompt"
-                # Verify ChatOpenAI was called with correct model name
-                mock_chat_openai.assert_called_once()
-                assert mock_chat_openai.call_args.kwargs["model"] == "gpt-4"
+            with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
+                mock_verify_tool.return_value = MagicMock()
+                with patch("langchain_openai.ChatOpenAI") as mock_chat_openai:
+                    mock_llm = MagicMock()
+                    mock_chat_openai.return_value = mock_llm
+                    agent = create_agent_runnable(config)
+                    assert agent == mock_agent
+                    mock_create_agent.assert_called_once()
+                    call_args = mock_create_agent.call_args
+                    # Now we pass ChatOpenAI instance, not string
+                    assert call_args.kwargs.get("model") == mock_llm
+                    assert call_args.kwargs.get("system_prompt") == "Test prompt"
+                    # Verify ChatOpenAI was called with correct model name
+                    mock_chat_openai.assert_called_once()
+                    assert mock_chat_openai.call_args.kwargs["model"] == "gpt-4"
 
 
 def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url):
@@ -50,9 +52,11 @@ def test_create_agent_runnable_success(mock_openai_api_key, mock_mcp_server_url)
         mock_create_agent.return_value = mock_agent
 
         with patch("src.graph.agent.get_mcp_tools", return_value=[]):
-            agent = create_agent_runnable()
-            assert agent == mock_agent
-            mock_create_agent.assert_called_once()
+            with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
+                mock_verify_tool.return_value = MagicMock()
+                agent = create_agent_runnable()
+                assert agent == mock_agent
+                mock_create_agent.assert_called_once()
 
 
 def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tools):
@@ -62,9 +66,11 @@ def test_create_agent_runnable_with_mcp_tools(mock_openai_api_key, mock_mcp_tool
         mock_create_agent.return_value = mock_agent
 
         with patch("src.graph.agent.get_mcp_tools", return_value=mock_mcp_tools):
-            agent = create_agent_runnable()
-            assert agent == mock_agent
-            # Verify tools were passed to create_agent
-            call_args = mock_create_agent.call_args
-            tools = call_args.kwargs.get("tools", [])
-            assert len(tools) > 0  # Should have MCP tools
+            with patch("src.graph.agent.create_verification_tool") as mock_verify_tool:
+                mock_verify_tool.return_value = MagicMock()
+                agent = create_agent_runnable()
+                assert agent == mock_agent
+                # Verify tools were passed to create_agent
+                call_args = mock_create_agent.call_args
+                tools = call_args.kwargs.get("tools", [])
+                assert len(tools) > 0  # Should have MCP tools and verification tool
