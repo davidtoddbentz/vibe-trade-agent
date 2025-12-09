@@ -123,11 +123,13 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
     """Test _verify_strategy_impl with successful verification."""
     from src.graph.verification_tool import _verify_strategy_impl
 
-    # Mock MCP client
+    # Mock MCP client with multiple tools
     mock_client = MagicMock()
-    mock_tool = MagicMock()
-    mock_tool.name = "get_strategy"
-    mock_tool.ainvoke = AsyncMock(
+    
+    # Mock get_strategy tool
+    mock_get_strategy = MagicMock()
+    mock_get_strategy.name = "get_strategy"
+    mock_get_strategy.ainvoke = AsyncMock(
         return_value={
             "strategy_id": "test-123",
             "name": "Test Strategy",
@@ -135,7 +137,19 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
             "attachments": [],
         }
     )
-    mock_client.get_tools = AsyncMock(return_value=[mock_tool])
+    
+    # Mock compile_strategy tool
+    mock_compile_strategy = MagicMock()
+    mock_compile_strategy.name = "compile_strategy"
+    mock_compile_strategy.ainvoke = AsyncMock(
+        return_value={
+            "status_hint": "ready",
+            "issues": [],
+            "compiled": {"strategy_id": "test-123"},
+        }
+    )
+    
+    mock_client.get_tools = AsyncMock(return_value=[mock_get_strategy, mock_compile_strategy])
     mock_mcp_client_class.return_value = mock_client
 
     # Mock LLM
@@ -154,7 +168,7 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
     )
 
     assert result.status == "Complete"
-    assert "notes" in result.notes
+    assert result.notes == "Strategy is complete"
 
 
 def test_verification_result_model():
