@@ -9,8 +9,8 @@ install:
 run:
 	@if [ ! -f .env ]; then \
 		echo "⚠️  Warning: .env file not found"; \
-		echo "   Create a .env file with your LANGSMITH_API_KEY"; \
-		echo "   Example: LANGSMITH_API_KEY=lsv2_..."; \
+		echo "   Create a .env file with your LANGGRAPH_API_KEY"; \
+		echo "   Example: LANGGRAPH_API_KEY=lsv2_..."; \
 	fi
 	@bash -c '\
 	if [ -f .env ]; then \

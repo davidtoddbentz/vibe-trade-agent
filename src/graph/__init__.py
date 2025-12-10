@@ -48,7 +48,7 @@ def _reload_prompt_from_langsmith(prompt_name: str):
     from langsmith import Client
 
     config = _get_base_config()
-    client = Client(api_key=config.langsmith_api_key)
+    client = Client(api_key=config.langgraph_api_key)
     return client.pull_prompt(prompt_name, include_model=True)
 
 
@@ -69,7 +69,7 @@ def graph(config: RunnableConfig | None = None):
 
     # Reload prompts from LangSmith to get latest versions
     # Use thread pool to avoid blocking the event loop
-    if config.langsmith_api_key:
+    if config.langgraph_api_key:
         # Reload main prompt
         if config.langsmith_prompt_name:
             try:

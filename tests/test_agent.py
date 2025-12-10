@@ -8,10 +8,10 @@ from src.graph.agent import create_agent_runnable
 from src.graph.config import AgentConfig
 
 
-def test_create_agent_runnable_missing_langsmith_key(monkeypatch):
-    """Test that agent creation fails without LangSmith API key."""
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="LANGSMITH_API_KEY"):
+def test_create_agent_runnable_missing_langgraph_key(monkeypatch):
+    """Test that agent creation fails without LangGraph API key."""
+    monkeypatch.delenv("LANGGRAPH_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="LANGGRAPH_API_KEY"):
         AgentConfig.from_env()
 
 
@@ -35,7 +35,7 @@ def test_create_agent_runnable_with_config(monkeypatch):
     mock_verify_prompt_chain = MagicMock()
 
     config = AgentConfig(
-        langsmith_api_key="test-langsmith-key",
+        langgraph_api_key="test-langgraph-key",
         langsmith_prompt_name="test-prompt",
         langsmith_prompt_chain=mock_prompt_chain,
         langsmith_verify_prompt_chain=mock_verify_prompt_chain,
@@ -62,7 +62,7 @@ def test_create_agent_runnable_with_config(monkeypatch):
 
 def test_create_agent_runnable_success(mock_mcp_server_url, monkeypatch):
     """Test successful agent creation."""
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-langgraph-key")
     monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
 
     # Create mock prompt chain
@@ -101,7 +101,7 @@ def test_create_agent_runnable_success(mock_mcp_server_url, monkeypatch):
 
 def test_create_agent_runnable_with_mcp_tools(mock_mcp_tools, monkeypatch):
     """Test agent creation with MCP tools."""
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-langgraph-key")
     monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
 
     # Create mock prompt chain
@@ -146,12 +146,12 @@ def test_create_agent_runnable_with_mcp_tools(mock_mcp_tools, monkeypatch):
                     assert len(tools) > 0  # Should have MCP tools and verification tool
 
 
-def test_create_agent_runnable_without_langsmith(monkeypatch):
-    """Test agent creation without LangSmith prompts still works."""
+def test_create_agent_runnable_without_langgraph(monkeypatch):
+    """Test agent creation without LangGraph prompts still works."""
     # Remove LangSmith env vars
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGGRAPH_API_KEY", raising=False)
     monkeypatch.delenv("LANGSMITH_PROMPT_NAME", raising=False)
 
-    # This should fail since LangSmith is required
-    with pytest.raises(ValueError, match="LANGSMITH_API_KEY"):
+    # This should fail since LangGraph is required
+    with pytest.raises(ValueError, match="LANGGRAPH_API_KEY"):
         AgentConfig.from_env()

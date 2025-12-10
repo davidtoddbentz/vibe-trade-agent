@@ -17,7 +17,7 @@ class AgentConfig:
     """
 
     # LangSmith config
-    langsmith_api_key: str
+    langgraph_api_key: str
     langsmith_prompt_name: str  # Name of main prompt in LangSmith (for dynamic reloading)
     langsmith_verify_prompt_name: str = "verify-prompt"  # Name of verification prompt in LangSmith
     langsmith_prompt_chain: Any = None  # RunnableSequence from LangSmith (includes model)
@@ -39,7 +39,7 @@ class AgentConfig:
         """Create configuration from environment variables.
 
         Required:
-        - LANGSMITH_API_KEY: LangSmith API key
+        - LANGGRAPH_API_KEY: LangGraph API key
         - LANGSMITH_PROMPT_NAME: Name of prompt to pull from LangSmith
 
         Optional:
@@ -48,9 +48,9 @@ class AgentConfig:
         - MCP_AUTH_TOKEN: Authentication token for MCP server (optional)
         - MAX_ITERATIONS: Max agent iterations (default: 15)
         """
-        langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
-        if not langsmith_api_key:
-            raise ValueError("LANGSMITH_API_KEY environment variable is required.")
+        langgraph_api_key = os.getenv("LANGGRAPH_API_KEY")
+        if not langgraph_api_key:
+            raise ValueError("LANGGRAPH_API_KEY environment variable is required.")
 
         langsmith_prompt_name = os.getenv("LANGSMITH_PROMPT_NAME")
         if not langsmith_prompt_name:
@@ -64,7 +64,7 @@ class AgentConfig:
 
         def _pull_prompts():
             """Pull prompts from LangSmith (blocking operation)."""
-            client = Client(api_key=langsmith_api_key)
+            client = Client(api_key=langgraph_api_key)
             prompt_chain = client.pull_prompt(langsmith_prompt_name, include_model=True)
             langsmith_verify_prompt_name = os.getenv(
                 "LANGSMITH_VERIFY_PROMPT_NAME", "verify-prompt"
@@ -95,7 +95,7 @@ class AgentConfig:
         )
 
         return cls(
-            langsmith_api_key=langsmith_api_key,
+            langgraph_api_key=langgraph_api_key,
             langsmith_prompt_name=langsmith_prompt_name,
             langsmith_verify_prompt_name=langsmith_verify_prompt_name,
             langsmith_prompt_chain=prompt_chain,
