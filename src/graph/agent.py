@@ -86,163 +86,6 @@ def _extract_system_prompt_from_chain(prompt_chain) -> str | None:
     return None
 
 
-def _load_latest_prompt_from_langsmith(
-    langsmith_api_key: str, prompt_name: str, include_model: bool = True
-):
-    """Load the latest prompt from LangSmith.
-
-    Args:
-        langsmith_api_key: LangSmith API key
-        prompt_name: Name of the prompt in LangSmith
-        include_model: Whether to include the model in the chain (default: True)
-
-    Returns:
-        Prompt chain from LangSmith. Raises ValueError if loading fails.
-    """
-    from langsmith import Client
-
-    client = Client(api_key=langsmith_api_key)
-    prompt_chain = client.pull_prompt(prompt_name, include_model=include_model)
-    if not prompt_chain:
-        raise ValueError(f"LangSmith returned None for prompt '{prompt_name}'")
-    return prompt_chain
-
-
-class DynamicPromptAgent:
-    """Wrapper for agent that reloads prompts dynamically while preserving Graph interface."""
-
-    def __init__(
-        self,
-        base_agent,
-        model,
-        tools,
-        langsmith_api_key: str,
-        langsmith_prompt_name: str,
-        initial_system_prompt: str | None,
-        initial_prompt_chain,
-        initial_revision_info: dict,
-        config: AgentConfig,
-    ):
-        """Initialize the dynamic prompt agent wrapper.
-
-        Args:
-            base_agent: The initial agent Graph
-            model: The LLM model (extracted from prompt chain)
-            tools: List of tools for the agent
-            langsmith_api_key: LangSmith API key for reloading prompts
-            langsmith_prompt_name: Name of the prompt in LangSmith
-            initial_system_prompt: Initial system prompt (fallback)
-            initial_prompt_chain: Initial prompt chain from LangSmith
-            initial_revision_info: Not used, kept for compatibility
-            config: Agent configuration
-        """
-        self._base_agent = base_agent
-        self._current_agent = base_agent
-        self._model = model
-        self._tools = tools
-        self._langsmith_api_key = langsmith_api_key
-        self._langsmith_prompt_name = langsmith_prompt_name
-        self._initial_system_prompt = initial_system_prompt
-        self._config = config
-        self._cached_prompt = initial_system_prompt
-        self._cached_prompt_chain = initial_prompt_chain
-
-        # Expose critical Graph attributes directly for LangGraph validation
-        # LangGraph checks for these attributes to determine if object is a Graph
-        self._sync_graph_attributes()
-
-        # Store the Graph's class for isinstance checks
-        self._graph_class = type(base_agent)
-
-    def _sync_graph_attributes(self):
-        """Sync Graph attributes from current agent to wrapper."""
-        # Copy key Graph attributes that LangGraph checks for
-        graph_attrs = ['nodes', 'edges', 'get_graph', 'get_state', 'update_state', 'compile']
-        for attr_name in graph_attrs:
-            if hasattr(self._current_agent, attr_name):
-                try:
-                    attr_value = getattr(self._current_agent, attr_name)
-                    object.__setattr__(self, attr_name, attr_value)
-                except (AttributeError, TypeError):
-                    pass
-
-    def _reload_agent_if_needed(self):
-        """Reload the agent if the prompt has changed.
-
-        Checks LangSmith for the latest prompt and recreates the agent if it has changed.
-        """
-        # Load latest prompt chain from LangSmith
-        # Raises ValueError if prompt cannot be loaded
-        try:
-            latest_chain = _load_latest_prompt_from_langsmith(
-                self._langsmith_api_key, self._langsmith_prompt_name, include_model=True
-            )
-        except Exception as e:
-            logger.warning(f"Could not reload prompt from LangSmith: {e}, keeping existing agent")
-            return False
-
-        # Extract prompt text
-        latest_system_prompt = _extract_system_prompt_from_chain(latest_chain)
-        if not latest_system_prompt:
-            return False
-
-        # Compare prompt text - only recreate if it changed
-        if latest_system_prompt != self._cached_prompt:
-            logger.info("Prompt updated, recreating agent with new system prompt")
-            # Create new agent with updated prompt
-            self._current_agent = create_agent(
-                model=self._model,
-                tools=self._tools,
-                system_prompt=latest_system_prompt,
-                middleware=[handle_tool_errors],
-            )
-            # Update cache
-            self._cached_prompt = latest_system_prompt
-            self._cached_prompt_chain = latest_chain
-            # Update exposed Graph attributes
-            self._sync_graph_attributes()
-            return True
-
-        return False
-
-    def invoke(self, input, config=None, **kwargs):
-        """Invoke the agent, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return self._current_agent.invoke(input, config=config, **kwargs)
-
-    async def ainvoke(self, input, config=None, **kwargs):
-        """Invoke the agent asynchronously, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return await self._current_agent.ainvoke(input, config=config, **kwargs)
-
-    def stream(self, input, config=None, **kwargs):
-        """Stream the agent, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return self._current_agent.stream(input, config=config, **kwargs)
-
-    async def astream(self, input, config=None, **kwargs):
-        """Stream the agent asynchronously, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return self._current_agent.astream(input, config=config, **kwargs)
-
-    def batch(self, inputs, config=None, **kwargs):
-        """Batch invoke the agent, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return self._current_agent.batch(inputs, config=config, **kwargs)
-
-    async def abatch(self, inputs, config=None, **kwargs):
-        """Batch invoke the agent asynchronously, reloading prompt if needed."""
-        self._reload_agent_if_needed()
-        return await self._current_agent.abatch(inputs, config=config, **kwargs)
-
-    @property
-    def __class__(self):
-        """Make isinstance() checks pass by returning the Graph's class."""
-        return self._graph_class
-
-    def __getattr__(self, name):
-        """Delegate all other attributes to the current agent."""
-        return getattr(self._current_agent, name)
 
 
 def create_agent_runnable(config: AgentConfig | None = None):
@@ -324,28 +167,12 @@ def create_agent_runnable(config: AgentConfig | None = None):
         except (ValueError, AttributeError, TypeError) as e:
             logger.debug(f"Could not set max_tokens on model ({model_type_name}): {e}")
 
-    # Create agent with initial system prompt
-    base_agent = create_agent(
+    # Create agent with system prompt from LangSmith
+    agent = create_agent(
         model=model,
         tools=tools,
         system_prompt=initial_system_prompt,
         middleware=[handle_tool_errors],
     )
 
-    # Wrap agent to reload prompt dynamically if LangSmith is configured
-    # Check for truthy values (not just existence) to handle empty strings
-    if config.langsmith_api_key and config.langsmith_prompt_name:
-        return DynamicPromptAgent(
-            base_agent=base_agent,
-            model=model,
-            tools=tools,
-            langsmith_api_key=config.langsmith_api_key,
-            langsmith_prompt_name=config.langsmith_prompt_name,
-            initial_system_prompt=initial_system_prompt,
-            initial_prompt_chain=initial_prompt_chain,
-            initial_revision_info={},  # Parameter kept for compatibility, not used
-            config=config,
-        )
-
-    # Return base agent if no dynamic reloading
-    return base_agent
+    return agent
