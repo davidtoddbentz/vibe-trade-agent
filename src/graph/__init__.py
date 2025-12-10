@@ -8,9 +8,11 @@ import concurrent.futures
 import logging
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
 
 from .agent import create_agent_runnable
 from .config import AgentConfig
+from .state import State
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,29 @@ def graph(config: RunnableConfig | None = None):
                 logger.warning(f"Could not reload verify prompt: {e}, using cached prompt")
 
     # Create fresh agent with latest prompt
-    agent = create_agent_runnable(config)
-    _configure_tool_node(agent)
-    return agent
+    agent_runnable = create_agent_runnable(config)
+    _configure_tool_node(agent_runnable)
+    
+    # Create a simple explicit graph that wraps the agent
+    # This maintains exact same behavior but makes the graph structure visible
+    workflow = StateGraph(State)
+    
+    # Add a single node that runs the agent
+    async def agent_node(state: State):
+        """Node that executes the agent runnable.
+        
+        The agent_runnable is a graph itself (from create_agent) that handles
+        the full ReAct loop internally. This node just invokes it and returns
+        the updated state.
+        """
+        # The agent expects state as a dict with "messages" key
+        result = await agent_runnable.ainvoke(state)
+        # Return the result (which should already be in the correct state format)
+        return result
+    
+    workflow.add_node("agent", agent_node)
+    workflow.set_entry_point("agent")
+    workflow.add_edge("agent", END)
+    
+    # Compile and return the graph
+    return workflow.compile()
