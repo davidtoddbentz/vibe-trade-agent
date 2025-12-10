@@ -7,7 +7,6 @@ from typing import Any
 
 from langchain.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -86,9 +85,10 @@ async def _call_mcp_tool(
 def _load_latest_verify_prompt(
     langsmith_api_key: str, langsmith_verify_prompt_name: str
 ) -> Any:
-    """Load the latest verify prompt from LangSmith.
+    """Load the latest verification prompt from LangSmith with model included.
 
     Raises ValueError if the prompt cannot be loaded.
+    No fallbacks - the app should fail if it can't get the prompt.
     """
     if not langsmith_api_key:
         raise ValueError(
@@ -98,12 +98,13 @@ def _load_latest_verify_prompt(
     from langsmith import Client
 
     client = Client(api_key=langsmith_api_key)
-    prompt = client.pull_prompt(langsmith_verify_prompt_name, include_model=False)
-    if not prompt:
+    # Pull prompt with model included, just like the main agent
+    prompt_chain = client.pull_prompt(langsmith_verify_prompt_name, include_model=True)
+    if not prompt_chain:
         raise ValueError(
             f"LangSmith returned None for prompt '{langsmith_verify_prompt_name}'"
         )
-    return prompt
+    return prompt_chain
 
 
 async def _verify_strategy_impl(
@@ -111,8 +112,6 @@ async def _verify_strategy_impl(
     conversation_context: str,
     mcp_url: str,
     mcp_auth_token: str | None,
-    openai_api_key: str,
-    model_name: str,
     langsmith_api_key: str,
     langsmith_verify_prompt_name: str,
 ) -> VerificationResult:
@@ -179,75 +178,37 @@ async def _verify_strategy_impl(
         indent=2,
     )
 
-    # Load latest prompt from LangSmith (pulls fresh each time)
+    # Load latest prompt chain from LangSmith (includes model)
     # Raises ValueError if prompt cannot be loaded
-    langsmith_verify_prompt = _load_latest_verify_prompt(
+    prompt_chain = _load_latest_verify_prompt(
         langsmith_api_key, langsmith_verify_prompt_name
     )
 
-    # Use LangSmith prompt template - fail if we can't format it
+    # Invoke the prompt chain with variables - it will format and call the model
     try:
-        # Invoke the prompt with variables
-        # The prompt template should have format() or invoke() method
-        if hasattr(langsmith_verify_prompt, "format"):
-            formatted_prompt = langsmith_verify_prompt.format(
-                user_request=user_request,
-                strategy_details=json.dumps(strategy_details, indent=2),
-                attached_cards=attached_cards,
-                schema_validation_issues=schema_validation_issues,
-            )
-        elif hasattr(langsmith_verify_prompt, "invoke"):
-            # If it's a Runnable, we can invoke it with a dict
-            result = langsmith_verify_prompt.invoke(
-                {
-                    "user_request": user_request,
-                    "strategy_details": json.dumps(strategy_details, indent=2),
-                    "attached_cards": attached_cards,
-                    "schema_validation_issues": schema_validation_issues,
-                }
-            )
-            # Extract the prompt text if it's a message
-            if hasattr(result, "content"):
-                formatted_prompt = result.content
-            elif isinstance(result, str):
-                formatted_prompt = result
-            else:
-                formatted_prompt = str(result)
+        # The prompt chain is a RunnableSequence that formats the prompt and calls the model
+        response = await prompt_chain.ainvoke(
+            {
+                "user_request": user_request,
+                "strategy_details": json.dumps(strategy_details, indent=2),
+                "attached_cards": attached_cards,
+                "schema_validation_issues": schema_validation_issues,
+            }
+        )
+
+        # Extract response text from the model output
+        if hasattr(response, "content"):
+            response_text = response.content
+        elif isinstance(response, str):
+            response_text = response
         else:
-            # Try to get template string and format manually
-            if hasattr(langsmith_verify_prompt, "template"):
-                template_str = langsmith_verify_prompt.template
-            elif (
-                hasattr(langsmith_verify_prompt, "messages")
-                and len(langsmith_verify_prompt.messages) > 0
-            ):
-                # Get the first message's prompt template
-                msg = langsmith_verify_prompt.messages[0]
-                if hasattr(msg, "prompt") and hasattr(msg.prompt, "template"):
-                    template_str = msg.prompt.template
-                else:
-                    raise ValueError("Could not extract template from LangSmith prompt")
-            else:
-                raise ValueError("Could not extract template from LangSmith prompt")
+            response_text = str(response)
 
-            # Format the template string manually
-            formatted_prompt = template_str.format(
-                user_request=user_request,
-                strategy_details=json.dumps(strategy_details, indent=2),
-                attached_cards=attached_cards,
-                schema_validation_issues=schema_validation_issues,
-            )
-
-        logger.info("Using LangSmith verify prompt for verification")
+        logger.info("Used LangSmith verify prompt chain with model for verification")
     except Exception as e:
         raise ValueError(
-            f"Failed to format LangSmith verification prompt '{langsmith_verify_prompt_name}': {e}"
+            f"Failed to invoke LangSmith verification prompt chain '{langsmith_verify_prompt_name}': {e}"
         ) from e
-
-    # Use LLM to analyze strategy
-    llm = ChatOpenAI(model=model_name, temperature=0, api_key=openai_api_key)
-    response = await llm.ainvoke(formatted_prompt)
-    response_text = response.content if hasattr(response, "content") else str(response)
 
     # Parse LLM response (it should return JSON)
     try:
@@ -280,8 +241,6 @@ async def _verify_strategy_impl(
 def create_verification_tool(
     mcp_url: str,
     mcp_auth_token: str | None,
-    openai_api_key: str,
-    model_name: str,
     langsmith_api_key: str,
     langsmith_verify_prompt_name: str,
 ):
@@ -290,10 +249,8 @@ def create_verification_tool(
     Args:
         mcp_url: MCP server URL
         mcp_auth_token: Authentication token for MCP server
-        openai_api_key: OpenAI API key for LLM analysis
-        model_name: OpenAI model to use for analysis
         langsmith_api_key: LangSmith API key (required for prompt loading)
-        langsmith_verify_prompt_name: Name of the LangSmith verify prompt
+        langsmith_verify_prompt_name: Name of the LangSmith verify prompt (includes model)
 
     Returns:
         LangChain tool for strategy verification
@@ -335,8 +292,6 @@ def create_verification_tool(
                     conversation_context=conversation_context,
                     mcp_url=mcp_url,
                     mcp_auth_token=mcp_auth_token,
-                    openai_api_key=openai_api_key,
-                    model_name=model_name,
                     langsmith_api_key=langsmith_api_key,
                     langsmith_verify_prompt_name=langsmith_verify_prompt_name,
                 )

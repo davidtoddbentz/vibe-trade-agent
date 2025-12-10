@@ -100,10 +100,6 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if config is None:
         config = AgentConfig.from_env()
 
-    # Parse model string - create_agent accepts model as string or LLM instance
-    # Format: "openai:gpt-4o-mini" or "gpt-4o-mini"
-    model_name = config.openai_model.replace("openai:", "")
-
     # Get MCP tools
     tools = []
     try:
@@ -124,8 +120,6 @@ def create_agent_runnable(config: AgentConfig | None = None):
         verification_tool = create_verification_tool(
             mcp_url=config.mcp_server_url,
             mcp_auth_token=config.mcp_auth_token,
-            openai_api_key=config.openai_api_key,
-            model_name=model_name,
             langsmith_api_key=config.langsmith_api_key,
             langsmith_verify_prompt_name=config.langsmith_verify_prompt_name,
         )
@@ -156,18 +150,8 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if not initial_system_prompt:
         logger.warning("Could not extract initial system prompt from LangSmith chain")
 
-    # Update model settings if needed (max_tokens, etc.)
-    model_type_name = type(model).__name__
-    if "RunnableBinding" not in model_type_name:
-        try:
-            if hasattr(model, 'max_tokens'):
-                model.max_tokens = config.max_tokens
-            elif hasattr(model, 'max_output_tokens'):
-                model.max_output_tokens = config.max_tokens
-        except (ValueError, AttributeError, TypeError) as e:
-            logger.debug(f"Could not set max_tokens on model ({model_type_name}): {e}")
-
     # Create agent with system prompt from LangSmith
+    # Note: Model configuration (max_tokens, etc.) should be set in LangSmith prompt
     agent = create_agent(
         model=model,
         tools=tools,
