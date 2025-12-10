@@ -120,8 +120,7 @@ def create_agent_runnable(config: AgentConfig | None = None):
         verification_tool = create_verification_tool(
             mcp_url=config.mcp_server_url,
             mcp_auth_token=config.mcp_auth_token,
-            langsmith_api_key=config.langsmith_api_key,
-            langsmith_verify_prompt_name=config.langsmith_verify_prompt_name,
+            verify_prompt_chain=config.langsmith_verify_prompt_chain,
         )
         tools.append(verification_tool)
         logger.info("Added verification tool")

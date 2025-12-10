@@ -14,11 +14,19 @@ from .config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
-# Load base configuration from environment
-_base_config = AgentConfig.from_env()
+# Base configuration (loaded lazily to avoid import-time failures in tests)
+_base_config: AgentConfig | None = None
 
 # Thread pool for blocking operations
 _thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="langsmith-reload")
+
+
+def _get_base_config() -> AgentConfig:
+    """Get base config, loading it if not already loaded."""
+    global _base_config
+    if _base_config is None:
+        _base_config = AgentConfig.from_env()
+    return _base_config
 
 
 def _configure_tool_node(agent):
@@ -33,14 +41,13 @@ def _configure_tool_node(agent):
             builtins.object.__setattr__(tool_node, "_handle_tool_errors", True)
 
 
-def _reload_prompt_from_langsmith():
+def _reload_prompt_from_langsmith(prompt_name: str):
     """Reload prompt from LangSmith (blocking operation)."""
     from langsmith import Client
 
-    client = Client(api_key=_base_config.langsmith_api_key)
-    return client.pull_prompt(
-        _base_config.langsmith_prompt_name, include_model=True
-    )
+    config = _get_base_config()
+    client = Client(api_key=config.langsmith_api_key)
+    return client.pull_prompt(prompt_name, include_model=True)
 
 
 def graph(config: RunnableConfig | None = None):
@@ -55,32 +62,57 @@ def graph(config: RunnableConfig | None = None):
     Returns:
         Fresh agent graph with latest prompt from LangSmith
     """
-    # Reload prompt from LangSmith to get latest version
-    # Use thread pool to avoid blocking the event loop
-    if _base_config.langsmith_api_key and _base_config.langsmith_prompt_name:
-        try:
-            # Check if we're in an async context
-            try:
-                asyncio.get_running_loop()
-                # We're in an async context, use thread pool to avoid blocking
-                future = _thread_pool.submit(_reload_prompt_from_langsmith)
-                # Use a short timeout to avoid hanging
-                _base_config.langsmith_prompt_chain = future.result(timeout=5.0)
-            except RuntimeError:
-                # No event loop running, safe to call directly
-                _base_config.langsmith_prompt_chain = _reload_prompt_from_langsmith()
-            except concurrent.futures.TimeoutError:
-                logger.warning("Timeout reloading prompt from LangSmith, using cached prompt")
-            except Exception as e:
-                logger.warning(f"Error reloading prompt: {e}, using cached prompt")
+    # Get base config (loads on first call)
+    config = _get_base_config()
 
-            logger.debug(f"Reloaded prompt '{_base_config.langsmith_prompt_name}' from LangSmith")
-        except Exception as e:
-            logger.warning(
-                f"Could not reload prompt from LangSmith: {e}, using cached prompt"
-            )
+    # Reload prompts from LangSmith to get latest versions
+    # Use thread pool to avoid blocking the event loop
+    if config.langsmith_api_key:
+        # Reload main prompt
+        if config.langsmith_prompt_name:
+            try:
+                try:
+                    asyncio.get_running_loop()
+                    future = _thread_pool.submit(
+                        _reload_prompt_from_langsmith, config.langsmith_prompt_name
+                    )
+                    config.langsmith_prompt_chain = future.result(timeout=5.0)
+                except RuntimeError:
+                    config.langsmith_prompt_chain = _reload_prompt_from_langsmith(
+                        config.langsmith_prompt_name
+                    )
+                except concurrent.futures.TimeoutError:
+                    logger.warning("Timeout reloading main prompt from LangSmith, using cached")
+                except Exception as e:
+                    logger.warning(f"Error reloading main prompt: {e}, using cached")
+                else:
+                    logger.debug(f"Reloaded prompt '{config.langsmith_prompt_name}' from LangSmith")
+            except Exception as e:
+                logger.warning(f"Could not reload main prompt: {e}, using cached prompt")
+
+        # Reload verification prompt
+        if config.langsmith_verify_prompt_name:
+            try:
+                try:
+                    asyncio.get_running_loop()
+                    future = _thread_pool.submit(
+                        _reload_prompt_from_langsmith, config.langsmith_verify_prompt_name
+                    )
+                    config.langsmith_verify_prompt_chain = future.result(timeout=5.0)
+                except RuntimeError:
+                    config.langsmith_verify_prompt_chain = _reload_prompt_from_langsmith(
+                        config.langsmith_verify_prompt_name
+                    )
+                except concurrent.futures.TimeoutError:
+                    logger.warning("Timeout reloading verify prompt from LangSmith, using cached")
+                except Exception as e:
+                    logger.warning(f"Error reloading verify prompt: {e}, using cached")
+                else:
+                    logger.debug(f"Reloaded verify prompt '{config.langsmith_verify_prompt_name}' from LangSmith")
+            except Exception as e:
+                logger.warning(f"Could not reload verify prompt: {e}, using cached prompt")
 
     # Create fresh agent with latest prompt
-    agent = create_agent_runnable(_base_config)
+    agent = create_agent_runnable(config)
     _configure_tool_node(agent)
     return agent

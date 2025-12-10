@@ -82,29 +82,6 @@ async def _call_mcp_tool(
     return _normalize_response(result)
 
 
-def _load_latest_verify_prompt(
-    langsmith_api_key: str, langsmith_verify_prompt_name: str
-) -> Any:
-    """Load the latest verification prompt from LangSmith with model included.
-
-    Raises ValueError if the prompt cannot be loaded.
-    No fallbacks - the app should fail if it can't get the prompt.
-    """
-    if not langsmith_api_key:
-        raise ValueError(
-            f"LangSmith API key is required. Cannot load prompt '{langsmith_verify_prompt_name}'"
-        )
-
-    from langsmith import Client
-
-    client = Client(api_key=langsmith_api_key)
-    # Pull prompt with model included, just like the main agent
-    prompt_chain = client.pull_prompt(langsmith_verify_prompt_name, include_model=True)
-    if not prompt_chain:
-        raise ValueError(
-            f"LangSmith returned None for prompt '{langsmith_verify_prompt_name}'"
-        )
-    return prompt_chain
 
 
 async def _verify_strategy_impl(
@@ -112,8 +89,7 @@ async def _verify_strategy_impl(
     conversation_context: str,
     mcp_url: str,
     mcp_auth_token: str | None,
-    langsmith_api_key: str,
-    langsmith_verify_prompt_name: str,
+    verify_prompt_chain: Any,
 ) -> VerificationResult:
     """Internal implementation of strategy verification."""
     client = _create_mcp_client(mcp_url, mcp_auth_token)
@@ -178,16 +154,11 @@ async def _verify_strategy_impl(
         indent=2,
     )
 
-    # Load latest prompt chain from LangSmith (includes model)
-    # Raises ValueError if prompt cannot be loaded
-    prompt_chain = _load_latest_verify_prompt(
-        langsmith_api_key, langsmith_verify_prompt_name
-    )
-
+    # Use the verification prompt chain (loaded from config)
     # Invoke the prompt chain with variables - it will format and call the model
     try:
         # The prompt chain is a RunnableSequence that formats the prompt and calls the model
-        response = await prompt_chain.ainvoke(
+        response = await verify_prompt_chain.ainvoke(
             {
                 "user_request": user_request,
                 "strategy_details": json.dumps(strategy_details, indent=2),
@@ -207,7 +178,7 @@ async def _verify_strategy_impl(
         logger.info("Used LangSmith verify prompt chain with model for verification")
     except Exception as e:
         raise ValueError(
-            f"Failed to invoke LangSmith verification prompt chain '{langsmith_verify_prompt_name}': {e}"
+            f"Failed to invoke LangSmith verification prompt chain: {e}"
         ) from e
 
     # Parse LLM response (it should return JSON)
@@ -241,16 +212,14 @@ async def _verify_strategy_impl(
 def create_verification_tool(
     mcp_url: str,
     mcp_auth_token: str | None,
-    langsmith_api_key: str,
-    langsmith_verify_prompt_name: str,
+    verify_prompt_chain: Any,
 ):
     """Create a verification tool for analyzing strategies.
 
     Args:
         mcp_url: MCP server URL
         mcp_auth_token: Authentication token for MCP server
-        langsmith_api_key: LangSmith API key (required for prompt loading)
-        langsmith_verify_prompt_name: Name of the LangSmith verify prompt (includes model)
+        verify_prompt_chain: LangSmith prompt chain with model (from config)
 
     Returns:
         LangChain tool for strategy verification
@@ -292,8 +261,7 @@ def create_verification_tool(
                     conversation_context=conversation_context,
                     mcp_url=mcp_url,
                     mcp_auth_token=mcp_auth_token,
-                    langsmith_api_key=langsmith_api_key,
-                    langsmith_verify_prompt_name=langsmith_verify_prompt_name,
+                    verify_prompt_chain=verify_prompt_chain,
                 )
             )
             return json.dumps({"status": result.status, "notes": result.notes}, indent=2)

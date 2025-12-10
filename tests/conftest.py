@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Set test environment variables
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("LANGSMITH_API_KEY", "test-key")
 os.environ.setdefault("LANGSMITH_PROMPT_NAME", "test-prompt")
 
@@ -40,10 +39,6 @@ def mock_httpx_client():
         yield mock_client
 
 
-@pytest.fixture
-def mock_openai_api_key(monkeypatch):
-    """Set a mock OpenAI API key for testing."""
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
 
 @pytest.fixture
