@@ -58,6 +58,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# Disable logfire plugin to avoid opentelemetry dependency conflicts
+addopts = "-p no:logfire"
 
 [tool.coverage.run]
 source = ["src"]

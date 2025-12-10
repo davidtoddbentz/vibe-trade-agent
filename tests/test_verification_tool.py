@@ -53,11 +53,11 @@ def test_normalize_response_object():
 
 def test_create_verification_tool():
     """Test creating verification tool."""
+    mock_verify_prompt_chain = MagicMock()
     tool = create_verification_tool(
         mcp_url="http://localhost:8080/mcp",
         mcp_auth_token=None,
-        openai_api_key="test-key",
-        model_name="gpt-4o-mini",
+        verify_prompt_chain=mock_verify_prompt_chain,
     )
     assert tool is not None
     assert tool.name == "verify_strategy"
@@ -71,10 +71,11 @@ def test_verify_strategy_success(mock_verify_impl, mock_asyncio_run):
     mock_verify_impl.return_value = mock_result
     mock_asyncio_run.return_value = mock_result
 
+    mock_verify_prompt_chain = MagicMock()
     tool = create_verification_tool(
         mcp_url="http://localhost:8080/mcp",
         mcp_auth_token=None,
-        openai_api_key="test-key",
+        verify_prompt_chain=mock_verify_prompt_chain,
     )
 
     result = tool.invoke(
@@ -95,10 +96,11 @@ def test_verify_strategy_error(mock_verify_impl, mock_asyncio_run):
     """Test verify_strategy tool handles errors gracefully."""
     mock_asyncio_run.side_effect = Exception("Test error")
 
+    mock_verify_prompt_chain = MagicMock()
     tool = create_verification_tool(
         mcp_url="http://localhost:8080/mcp",
         mcp_auth_token=None,
-        openai_api_key="test-key",
+        verify_prompt_chain=mock_verify_prompt_chain,
     )
 
     result = tool.invoke(
@@ -118,8 +120,7 @@ def test_verify_strategy_error(mock_verify_impl, mock_asyncio_run):
 
 @pytest.mark.asyncio
 @patch("src.graph.verification_tool.MultiServerMCPClient")
-@patch("src.graph.verification_tool.ChatOpenAI")
-async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
+async def test_verify_strategy_impl_success(mock_mcp_client_class):
     """Test _verify_strategy_impl with successful verification."""
     from src.graph.verification_tool import _verify_strategy_impl
 
@@ -152,19 +153,18 @@ async def test_verify_strategy_impl_success(mock_llm, mock_mcp_client_class):
     mock_client.get_tools = AsyncMock(return_value=[mock_get_strategy, mock_compile_strategy])
     mock_mcp_client_class.return_value = mock_client
 
-    # Mock LLM
-    mock_llm_instance = MagicMock()
-    mock_llm_instance.ainvoke = AsyncMock(
+    # Mock verify prompt chain
+    mock_verify_prompt_chain = MagicMock()
+    mock_verify_prompt_chain.ainvoke = AsyncMock(
         return_value=MagicMock(content='{"status": "Complete", "notes": "Strategy is complete"}')
     )
-    mock_llm.return_value = mock_llm_instance
 
     result = await _verify_strategy_impl(
         strategy_id="test-123",
         conversation_context="User wants a strategy",
         mcp_url="http://localhost:8080/mcp",
         mcp_auth_token=None,
-        openai_api_key="test-key",
+        verify_prompt_chain=mock_verify_prompt_chain,
     )
 
     assert result.status == "Complete"

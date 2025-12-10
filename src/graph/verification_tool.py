@@ -7,7 +7,6 @@ from typing import Any
 
 from langchain.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -88,8 +87,7 @@ async def _verify_strategy_impl(
     conversation_context: str,
     mcp_url: str,
     mcp_auth_token: str | None,
-    openai_api_key: str,
-    model_name: str = "gpt-4o-mini",
+    verify_prompt_chain: Any,
 ) -> VerificationResult:
     """Internal implementation of strategy verification."""
     client = _create_mcp_client(mcp_url, mcp_auth_token)
@@ -133,45 +131,51 @@ async def _verify_strategy_impl(
         logger.warning(f"Could not compile strategy: {e}")
         compile_dict = {"status_hint": "error", "issues": [{"message": str(e)}]}
 
-    # Use LLM to analyze strategy against user request
-    llm = ChatOpenAI(model=model_name, temperature=0, api_key=openai_api_key)
+    # Format input variables for the LangSmith prompt
+    user_request = conversation_context
 
-    analysis_prompt = f"""You are analyzing a trading strategy to verify if it matches the user's requirements and schema validation.
+    strategy_details = {
+        "strategy_id": strategy_id,
+        "name": strategy_dict.get("name", "Unknown"),
+        "universe": strategy_dict.get("universe", []),
+    }
 
-USER REQUEST (from conversation context):
-{conversation_context}
+    attached_cards = json.dumps(cards_info, indent=2)
 
-STRATEGY DETAILS:
-- Strategy ID: {strategy_id}
-- Strategy Name: {strategy_dict.get("name", "Unknown")}
-- Universe: {strategy_dict.get("universe", [])}
+    schema_validation_issues = json.dumps(
+        [
+            issue
+            for issue in compile_dict.get("issues", [])
+            if issue.get("code")
+            in ["SLOT_VALIDATION_ERROR", "SCHEMA_NOT_FOUND", "MISSING_CONTEXT", "CARD_NOT_FOUND"]
+        ],
+        indent=2,
+    )
 
-ATTACHED CARDS:
-{json.dumps(cards_info, indent=2)}
+    # Use the verification prompt chain (loaded from config)
+    # Invoke the prompt chain with variables - it will format and call the model
+    try:
+        # The prompt chain is a RunnableSequence that formats the prompt and calls the model
+        response = await verify_prompt_chain.ainvoke(
+            {
+                "user_request": user_request,
+                "strategy_details": json.dumps(strategy_details, indent=2),
+                "attached_cards": attached_cards,
+                "schema_validation_issues": schema_validation_issues,
+            }
+        )
 
-SCHEMA VALIDATION ISSUES (only check these):
-{json.dumps([issue for issue in compile_dict.get("issues", []) if issue.get("code") in ["SLOT_VALIDATION_ERROR", "SCHEMA_NOT_FOUND", "MISSING_CONTEXT", "CARD_NOT_FOUND"]], indent=2)}
+        # Extract response text from the model output
+        if hasattr(response, "content"):
+            response_text = response.content
+        elif isinstance(response, str):
+            response_text = response
+        else:
+            response_text = str(response)
 
-VERIFICATION RULES:
-1. Check ONLY if the strategy implements what the user EXPLICITLY mentioned in the conversation context
-2. Check ONLY for schema validation errors listed above
-3. If user mentioned entry logic, check if entry cards match (symbol, timeframe, direction, conditions)
-4. If user mentioned exit logic, check if exit cards match (only if user explicitly requested exits)
-5. If user mentioned gates/overlays, check if they match (only if user explicitly requested them)
-6. DO NOT mention missing exit cards, gates, or overlays unless the user EXPLICITLY requested them
-7. DO NOT mention completeness, operational status, or risk management
-
-STATUS DETERMINATION:
-- "Complete": Strategy matches ALL user-requested components AND no schema errors
-- "Partial": Strategy matches SOME user-requested components OR has schema errors (but is implementable)
-- "Not Implementable": Strategy doesn't match user request OR has critical schema errors that prevent implementation
-
-Return your analysis as JSON with:
-- "status": one of "Complete", "Partial", or "Not Implementable"
-- "notes": Brief, clear explanation. If Complete, state what matches. If not Complete, list ONLY what doesn't match user request or schema errors. Do not be contradictory."""
-
-    response = await llm.ainvoke(analysis_prompt)
-    response_text = response.content if hasattr(response, "content") else str(response)
+        logger.info("Used LangSmith verify prompt chain with model for verification")
+    except Exception as e:
+        raise ValueError(f"Failed to invoke LangSmith verification prompt chain: {e}") from e
 
     # Parse LLM response (it should return JSON)
     try:
@@ -204,16 +208,14 @@ Return your analysis as JSON with:
 def create_verification_tool(
     mcp_url: str,
     mcp_auth_token: str | None,
-    openai_api_key: str,
-    model_name: str = "gpt-4o-mini",
+    verify_prompt_chain: Any,
 ):
     """Create a verification tool for analyzing strategies.
 
     Args:
         mcp_url: MCP server URL
         mcp_auth_token: Authentication token for MCP server
-        openai_api_key: OpenAI API key for LLM analysis
-        model_name: OpenAI model to use for analysis
+        verify_prompt_chain: LangSmith prompt chain with model (from config)
 
     Returns:
         LangChain tool for strategy verification
@@ -255,8 +257,7 @@ def create_verification_tool(
                     conversation_context=conversation_context,
                     mcp_url=mcp_url,
                     mcp_auth_token=mcp_auth_token,
-                    openai_api_key=openai_api_key,
-                    model_name=model_name,
+                    verify_prompt_chain=verify_prompt_chain,
                 )
             )
             return json.dumps({"status": result.status, "notes": result.notes}, indent=2)

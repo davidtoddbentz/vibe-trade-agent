@@ -64,6 +64,28 @@ async def handle_tool_errors(request, handler):
         )
 
 
+def _extract_system_prompt_from_chain(prompt_chain) -> str | None:
+    """Extract system prompt text from a LangSmith prompt chain."""
+    prompt_template = None
+    if hasattr(prompt_chain, "steps") and len(prompt_chain.steps) > 0:
+        prompt_template = prompt_chain.steps[0]
+    elif hasattr(prompt_chain, "first"):
+        prompt_template = prompt_chain.first
+
+    if prompt_template:
+        if hasattr(prompt_template, "messages"):
+            for msg in prompt_template.messages:
+                if hasattr(msg, "prompt") and hasattr(msg.prompt, "template"):
+                    return msg.prompt.template
+                elif hasattr(msg, "content") and isinstance(msg.content, str):
+                    return msg.content
+        elif hasattr(prompt_template, "template"):
+            return prompt_template.template
+        elif isinstance(prompt_template, str):
+            return prompt_template
+    return None
+
+
 def create_agent_runnable(config: AgentConfig | None = None):
     """Create a ReAct agent with tools using LangChain's create_agent.
 
@@ -75,10 +97,6 @@ def create_agent_runnable(config: AgentConfig | None = None):
     """
     if config is None:
         config = AgentConfig.from_env()
-
-    # Parse model string - create_agent accepts model as string or LLM instance
-    # Format: "openai:gpt-4o-mini" or "gpt-4o-mini"
-    model_name = config.openai_model.replace("openai:", "")
 
     # Get MCP tools
     tools = []
@@ -100,8 +118,7 @@ def create_agent_runnable(config: AgentConfig | None = None):
         verification_tool = create_verification_tool(
             mcp_url=config.mcp_server_url,
             mcp_auth_token=config.mcp_auth_token,
-            openai_api_key=config.openai_api_key,
-            model_name=model_name,
+            verify_prompt_chain=config.langsmith_verify_prompt_chain,
         )
         tools.append(verification_tool)
         logger.info("Added verification tool")
@@ -112,24 +129,31 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if not tools:
         logger.warning("No tools available - agent will have limited functionality")
 
-    from langchain_openai import ChatOpenAI
+    # Get initial prompt chain to extract model
+    initial_prompt_chain = config.langsmith_prompt_chain
 
-    # Create LLM with cost limits
-    llm = ChatOpenAI(
-        model=model_name,
-        temperature=0,
-        max_tokens=config.max_tokens,
-        api_key=config.openai_api_key,
-    )
+    # Get the model from the chain (last step)
+    model = None
+    if hasattr(initial_prompt_chain, "steps") and len(initial_prompt_chain.steps) > 0:
+        model = initial_prompt_chain.steps[-1]
+    elif hasattr(initial_prompt_chain, "last"):
+        model = initial_prompt_chain.last
 
-    # create_agent accepts model as string or LLM instance
-    # Use middleware to handle tool errors as per LangChain docs
-    # wrap_tool_call handles both sync and async functions
+    if model is None:
+        raise ValueError("Could not extract model from LangSmith prompt chain")
+
+    # Extract initial system prompt (used as fallback)
+    initial_system_prompt = _extract_system_prompt_from_chain(initial_prompt_chain)
+    if not initial_system_prompt:
+        logger.warning("Could not extract initial system prompt from LangSmith chain")
+
+    # Create agent with system prompt from LangSmith
+    # Note: Model configuration (max_tokens, etc.) should be set in LangSmith prompt
     agent = create_agent(
-        model=llm,  # Pass LLM instance instead of string
+        model=model,
         tools=tools,
-        system_prompt=config.system_prompt,
-        middleware=[handle_tool_errors],  # Handle tool errors gracefully
+        system_prompt=initial_system_prompt,
+        middleware=[handle_tool_errors],
     )
 
     return agent
