@@ -82,8 +82,6 @@ async def _call_mcp_tool(
     return _normalize_response(result)
 
 
-
-
 async def _verify_strategy_impl(
     strategy_id: str,
     conversation_context: str,
@@ -177,9 +175,7 @@ async def _verify_strategy_impl(
 
         logger.info("Used LangSmith verify prompt chain with model for verification")
     except Exception as e:
-        raise ValueError(
-            f"Failed to invoke LangSmith verification prompt chain: {e}"
-        ) from e
+        raise ValueError(f"Failed to invoke LangSmith verification prompt chain: {e}") from e
 
     # Parse LLM response (it should return JSON)
     try:

@@ -10,7 +10,9 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 logger = logging.getLogger(__name__)
 
 # Thread pool for MCP operations
-_mcp_thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="mcp-client")
+_mcp_thread_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="mcp-client"
+)
 
 
 def _get_mcp_tools_in_thread(
@@ -53,9 +55,7 @@ def _get_mcp_tools_in_thread(
 
             # Wait for all tasks to be cancelled (with timeout)
             if pending:
-                new_loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True)
-                )
+                new_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         except Exception:
             # Ignore errors during cleanup
             pass

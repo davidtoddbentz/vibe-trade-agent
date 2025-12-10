@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 _base_config: AgentConfig | None = None
 
 # Thread pool for blocking operations
-_thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="langsmith-reload")
+_thread_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="langsmith-reload"
+)
 
 
 def _get_base_config() -> AgentConfig:
@@ -108,7 +110,9 @@ def graph(config: RunnableConfig | None = None):
                 except Exception as e:
                     logger.warning(f"Error reloading verify prompt: {e}, using cached")
                 else:
-                    logger.debug(f"Reloaded verify prompt '{config.langsmith_verify_prompt_name}' from LangSmith")
+                    logger.debug(
+                        f"Reloaded verify prompt '{config.langsmith_verify_prompt_name}' from LangSmith"
+                    )
             except Exception as e:
                 logger.warning(f"Could not reload verify prompt: {e}, using cached prompt")
 

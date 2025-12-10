@@ -15,8 +15,6 @@ def test_agent_config_from_env_missing_langsmith_key(monkeypatch):
         AgentConfig.from_env()
 
 
-
-
 def test_agent_config_from_env_missing_prompt_name(monkeypatch):
     """Test that config creation fails without LangSmith prompt name."""
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")

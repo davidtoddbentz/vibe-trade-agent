@@ -39,8 +39,6 @@ def mock_httpx_client():
         yield mock_client
 
 
-
-
 @pytest.fixture
 def mock_mcp_server_url(monkeypatch):
     """Set a mock MCP server URL for testing."""

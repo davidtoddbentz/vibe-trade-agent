@@ -67,25 +67,23 @@ async def handle_tool_errors(request, handler):
 def _extract_system_prompt_from_chain(prompt_chain) -> str | None:
     """Extract system prompt text from a LangSmith prompt chain."""
     prompt_template = None
-    if hasattr(prompt_chain, 'steps') and len(prompt_chain.steps) > 0:
+    if hasattr(prompt_chain, "steps") and len(prompt_chain.steps) > 0:
         prompt_template = prompt_chain.steps[0]
-    elif hasattr(prompt_chain, 'first'):
+    elif hasattr(prompt_chain, "first"):
         prompt_template = prompt_chain.first
 
     if prompt_template:
-        if hasattr(prompt_template, 'messages'):
+        if hasattr(prompt_template, "messages"):
             for msg in prompt_template.messages:
-                if hasattr(msg, 'prompt') and hasattr(msg.prompt, 'template'):
+                if hasattr(msg, "prompt") and hasattr(msg.prompt, "template"):
                     return msg.prompt.template
-                elif hasattr(msg, 'content') and isinstance(msg.content, str):
+                elif hasattr(msg, "content") and isinstance(msg.content, str):
                     return msg.content
-        elif hasattr(prompt_template, 'template'):
+        elif hasattr(prompt_template, "template"):
             return prompt_template.template
         elif isinstance(prompt_template, str):
             return prompt_template
     return None
-
-
 
 
 def create_agent_runnable(config: AgentConfig | None = None):
@@ -136,9 +134,9 @@ def create_agent_runnable(config: AgentConfig | None = None):
 
     # Get the model from the chain (last step)
     model = None
-    if hasattr(initial_prompt_chain, 'steps') and len(initial_prompt_chain.steps) > 0:
+    if hasattr(initial_prompt_chain, "steps") and len(initial_prompt_chain.steps) > 0:
         model = initial_prompt_chain.steps[-1]
-    elif hasattr(initial_prompt_chain, 'last'):
+    elif hasattr(initial_prompt_chain, "last"):
         model = initial_prompt_chain.last
 
     if model is None:

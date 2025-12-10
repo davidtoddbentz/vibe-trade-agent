@@ -88,7 +88,10 @@ def test_create_agent_runnable_success(mock_mcp_server_url, monkeypatch):
                 with patch("langsmith.Client") as mock_client_class:
                     mock_client = MagicMock()
                     mock_client_class.return_value = mock_client
-                    mock_client.pull_prompt.side_effect = [mock_prompt_chain, mock_verify_prompt_chain]
+                    mock_client.pull_prompt.side_effect = [
+                        mock_prompt_chain,
+                        mock_verify_prompt_chain,
+                    ]
 
                     agent = create_agent_runnable()
                     # Agent should be created successfully
@@ -129,7 +132,10 @@ def test_create_agent_runnable_with_mcp_tools(mock_mcp_tools, monkeypatch):
                 with patch("langsmith.Client") as mock_client_class:
                     mock_client = MagicMock()
                     mock_client_class.return_value = mock_client
-                    mock_client.pull_prompt.side_effect = [mock_prompt_chain, mock_verify_prompt_chain]
+                    mock_client.pull_prompt.side_effect = [
+                        mock_prompt_chain,
+                        mock_verify_prompt_chain,
+                    ]
 
                     agent = create_agent_runnable()
                     # Agent should be created successfully

@@ -21,7 +21,9 @@ class AgentConfig:
     langsmith_prompt_name: str  # Name of main prompt in LangSmith (for dynamic reloading)
     langsmith_verify_prompt_name: str = "verify-prompt"  # Name of verification prompt in LangSmith
     langsmith_prompt_chain: Any = None  # RunnableSequence from LangSmith (includes model)
-    langsmith_verify_prompt_chain: Any = None  # RunnableSequence from LangSmith for verification (includes model)
+    langsmith_verify_prompt_chain: Any = (
+        None  # RunnableSequence from LangSmith for verification (includes model)
+    )
 
     # MCP config
     mcp_server_url: str = "http://localhost:8080/mcp"
@@ -48,15 +50,11 @@ class AgentConfig:
         """
         langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
         if not langsmith_api_key:
-            raise ValueError(
-                "LANGSMITH_API_KEY environment variable is required."
-            )
+            raise ValueError("LANGSMITH_API_KEY environment variable is required.")
 
         langsmith_prompt_name = os.getenv("LANGSMITH_PROMPT_NAME")
         if not langsmith_prompt_name:
-            raise ValueError(
-                "LANGSMITH_PROMPT_NAME environment variable is required."
-            )
+            raise ValueError("LANGSMITH_PROMPT_NAME environment variable is required.")
 
         # Pull prompts from LangSmith (use thread pool if in async context)
         import asyncio
@@ -68,8 +66,12 @@ class AgentConfig:
             """Pull prompts from LangSmith (blocking operation)."""
             client = Client(api_key=langsmith_api_key)
             prompt_chain = client.pull_prompt(langsmith_prompt_name, include_model=True)
-            langsmith_verify_prompt_name = os.getenv("LANGSMITH_VERIFY_PROMPT_NAME", "verify-prompt")
-            verify_prompt_chain = client.pull_prompt(langsmith_verify_prompt_name, include_model=True)
+            langsmith_verify_prompt_name = os.getenv(
+                "LANGSMITH_VERIFY_PROMPT_NAME", "verify-prompt"
+            )
+            verify_prompt_chain = client.pull_prompt(
+                langsmith_verify_prompt_name, include_model=True
+            )
             return prompt_chain, verify_prompt_chain
 
         # Check if we're in an async context
@@ -88,7 +90,9 @@ class AgentConfig:
 
         logger.info(f"Loaded prompt '{langsmith_prompt_name}' from LangSmith with model")
         langsmith_verify_prompt_name = os.getenv("LANGSMITH_VERIFY_PROMPT_NAME", "verify-prompt")
-        logger.info(f"Loaded verification prompt '{langsmith_verify_prompt_name}' from LangSmith with model")
+        logger.info(
+            f"Loaded verification prompt '{langsmith_verify_prompt_name}' from LangSmith with model"
+        )
 
         return cls(
             langsmith_api_key=langsmith_api_key,
