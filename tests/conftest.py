@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Set test environment variables
-os.environ.setdefault("LANGSMITH_API_KEY", "test-key")
+os.environ.setdefault("LANGGRAPH_API_KEY", "test-key")
 os.environ.setdefault("LANGSMITH_PROMPT_NAME", "test-prompt")
 
 

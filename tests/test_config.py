@@ -7,17 +7,17 @@ import pytest
 from src.graph.config import AgentConfig
 
 
-def test_agent_config_from_env_missing_langsmith_key(monkeypatch):
-    """Test that config creation fails without LangSmith API key."""
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+def test_agent_config_from_env_missing_langgraph_key(monkeypatch):
+    """Test that config creation fails without LangGraph API key."""
+    monkeypatch.delenv("LANGGRAPH_API_KEY", raising=False)
 
-    with pytest.raises(ValueError, match="LANGSMITH_API_KEY"):
+    with pytest.raises(ValueError, match="LANGGRAPH_API_KEY"):
         AgentConfig.from_env()
 
 
 def test_agent_config_from_env_missing_prompt_name(monkeypatch):
     """Test that config creation fails without LangSmith prompt name."""
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-langgraph-key")
     monkeypatch.delenv("LANGSMITH_PROMPT_NAME", raising=False)
 
     with pytest.raises(ValueError, match="LANGSMITH_PROMPT_NAME"):
@@ -26,7 +26,7 @@ def test_agent_config_from_env_missing_prompt_name(monkeypatch):
 
 def test_agent_config_from_env_success(monkeypatch):
     """Test successful config creation from environment."""
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-langgraph-key")
     monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
     monkeypatch.setenv("MCP_SERVER_URL", "http://custom:8080/mcp")
     monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
@@ -41,7 +41,7 @@ def test_agent_config_from_env_success(monkeypatch):
 
         config = AgentConfig.from_env()
 
-        assert config.langsmith_api_key == "test-langsmith-key"
+        assert config.langgraph_api_key == "test-langgraph-key"
         assert config.langsmith_prompt_name == "test-prompt"
         assert config.langsmith_verify_prompt_name == "verify-prompt"  # Default value
         assert config.langsmith_prompt_chain == mock_prompt_chain
@@ -56,7 +56,7 @@ def test_agent_config_from_env_success(monkeypatch):
 
 def test_agent_config_defaults(monkeypatch):
     """Test config uses defaults when env vars not set."""
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
+    monkeypatch.setenv("LANGGRAPH_API_KEY", "test-langgraph-key")
     monkeypatch.setenv("LANGSMITH_PROMPT_NAME", "test-prompt")
     monkeypatch.delenv("MCP_SERVER_URL", raising=False)
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
@@ -81,7 +81,7 @@ def test_agent_config_direct_creation():
     mock_prompt_chain = MagicMock()
     mock_verify_prompt_chain = MagicMock()
     config = AgentConfig(
-        langsmith_api_key="langsmith-key",
+        langgraph_api_key="langgraph-key",
         langsmith_prompt_name="test-prompt",
         langsmith_prompt_chain=mock_prompt_chain,
         langsmith_verify_prompt_chain=mock_verify_prompt_chain,
@@ -89,7 +89,7 @@ def test_agent_config_direct_creation():
         mcp_auth_token="token",
     )
 
-    assert config.langsmith_api_key == "langsmith-key"
+    assert config.langgraph_api_key == "langgraph-key"
     assert config.langsmith_prompt_name == "test-prompt"
     assert config.langsmith_prompt_chain == mock_prompt_chain
     assert config.langsmith_verify_prompt_chain == mock_verify_prompt_chain
