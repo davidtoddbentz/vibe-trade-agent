@@ -243,7 +243,7 @@ def create_verification_tool(
 
         Args:
             strategy_id: The ID of the strategy to verify (from create_strategy)
-            conversation_context: The full conversation history formatted as a string. Include all user messages and your responses that describe what the user wants. You can format this by summarizing the key requirements or copying relevant parts of the conversation.
+            conversation_context: A summary of the user's requirements extracted from the conversation. Include: symbols, timeframes, entry logic, exit logic (if mentioned), gates/overlays (if mentioned), and any specific conditions or thresholds. Format as a concise summary, not the full conversation history.
 
         Returns:
             JSON string with 'status' ('Complete', 'Partial', or 'Not Implementable') and 'notes' fields.
