@@ -22,7 +22,7 @@ def create_supervisor():
     tools = get_mcp_tools(
         allowed_tools=["get_archetypes", "get_archetype_schema"]
     )
-    
+
     if not tools:
         logger.warning("No MCP tools loaded. Agent will have limited functionality.")
 

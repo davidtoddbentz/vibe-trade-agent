@@ -56,7 +56,7 @@ def get_mcp_tools(
         }
         if config.mcp_auth_token:
             connection_config["headers"] = {"Authorization": f"Bearer {config.mcp_auth_token}"}
-        
+
         connection = StreamableHttpConnection(**connection_config)
 
         # Load tools - for streamable_http, tools create new sessions per call
@@ -67,18 +67,18 @@ def get_mcp_tools(
             return await load_mcp_tools(None, connection=connection)
 
         tools = asyncio.run(_load_tools())
-        
+
         # Filter tools if allowed_tools is provided (None means allow all)
         if allowed_tools is not None:
             filtered_tools = [tool for tool in tools if tool.name in allowed_tools]
-            
+
             if filtered_tools:
                 logger.info(f"Loaded {len(filtered_tools)}/{len(tools)} MCP tools (filtered)")
             else:
                 logger.warning(f"All {len(tools)} MCP tools were filtered out")
-            
+
             return filtered_tools
-        
+
         # No filter - return all tools
         logger.info(f"Loaded {len(tools)} MCP tools")
         return tools
