@@ -64,6 +64,46 @@ async def handle_tool_errors(request, handler):
         )
 
 
+def _extract_model_from_chain(prompt_chain):
+    """Extract the model from a LangSmith prompt chain.
+    
+    Args:
+        prompt_chain: RunnableSequence from LangSmith (includes model)
+        
+    Returns:
+        Model object with bind_tools method
+        
+    Raises:
+        ValueError: If no model found in chain
+    """
+    # First check if the chain itself is a model (edge case)
+    if hasattr(prompt_chain, "bind_tools"):
+        logger.info(f"Chain itself is a model: {type(prompt_chain).__name__}")
+        return prompt_chain
+    
+    # LangSmith chains are RunnableSequence with .steps
+    if not hasattr(prompt_chain, "steps"):
+        raise ValueError(
+            "Prompt chain does not have .steps attribute. "
+            "Expected RunnableSequence from LangSmith."
+        )
+    
+    steps = list(prompt_chain.steps)
+    logger.debug(f"Found {len(steps)} steps in prompt chain")
+    
+    # Find the first step that has bind_tools (that's the model)
+    # Models have bind_tools, parsers and other runnables don't
+    for step in steps:
+        if hasattr(step, "bind_tools"):
+            logger.info(f"Extracted model: {type(step).__name__}")
+            return step
+
+    raise ValueError(
+        "Could not extract model from LangSmith prompt chain. "
+        "No step with bind_tools method found in chain steps."
+    )
+
+
 def _extract_system_prompt_from_chain(prompt_chain) -> str | None:
     """Extract system prompt text from a LangSmith prompt chain."""
     prompt_template = None
@@ -86,10 +126,11 @@ def _extract_system_prompt_from_chain(prompt_chain) -> str | None:
     return None
 
 
-def create_agent_runnable(config: AgentConfig | None = None):
+def create_agent_runnable(model, config: AgentConfig | None = None):
     """Create a ReAct agent with tools using LangChain's create_agent.
 
     Args:
+        model: Model object with bind_tools method (extracted from LangSmith chain)
         config: Agent configuration. If None, loads from environment.
 
     Returns:
@@ -129,93 +170,8 @@ def create_agent_runnable(config: AgentConfig | None = None):
     if not tools:
         logger.warning("No tools available - agent will have limited functionality")
 
-    # Get initial prompt chain to extract model
-    initial_prompt_chain = config.langsmith_prompt_chain
-
-    # Get the model from the chain
-    # With structured output, the last step might be a JsonOutputParser,
-    # so we need to find the actual model (which has bind_tools method)
-    model = None
-    steps = []
-    
-    if hasattr(initial_prompt_chain, "steps"):
-        steps = list(initial_prompt_chain.steps)
-        logger.debug(f"Found {len(steps)} steps in prompt chain")
-    elif hasattr(initial_prompt_chain, "last"):
-        # If it's a RunnableSequence, walk through it
-        current = initial_prompt_chain
-        while hasattr(current, "first") and hasattr(current, "last"):
-            steps.append(current.first)
-            current = current.last
-        if current:
-            steps.append(current)
-        logger.debug(f"Found {len(steps)} steps in prompt chain (via first/last)")
-    
-    # Log step types for debugging
-    if steps:
-        step_types = [getattr(step, "__class__", type(step)).__name__ for step in steps]
-        logger.debug(f"Chain step types: {step_types}")
-    
-    # Find the model by looking for something that has bind_tools method
-    # (which indicates it's a model, not a parser)
-    # With structured output, the model might be before the JsonOutputParser
-    for step in reversed(steps):  # Start from the end and work backwards
-        # Skip parsers - they don't have bind_tools and aren't models
-        step_class_name = getattr(step, "__class__", type(step)).__name__
-        if "Parser" in step_class_name or "OutputParser" in step_class_name:
-            continue
-            
-        # Check if this step has bind_tools (indicates it's a model)
-        if hasattr(step, "bind_tools"):
-            model = step
-            break
-        # Also check if it's a RunnableLambda or similar that wraps a model
-        if hasattr(step, "runnable") and hasattr(step.runnable, "bind_tools"):
-            model = step.runnable
-            break
-        # Check for bound model attribute (some chains store the model here)
-        if hasattr(step, "bound") and hasattr(step.bound, "bind_tools"):
-            model = step.bound
-            break
-        # Check if it's a model with structured output (might have a different structure)
-        if hasattr(step, "lc_kwargs") and "model" in step.lc_kwargs:
-            potential_model = step.lc_kwargs["model"]
-            if hasattr(potential_model, "bind_tools"):
-                model = potential_model
-                break
-        # Check if step itself is a Runnable that wraps a model (e.g., with_structured_output)
-        # Look for underlying model in various attributes
-        for attr_name in ["runnable", "bound", "model", "llm", "client"]:
-            if hasattr(step, attr_name):
-                attr_value = getattr(step, attr_name)
-                if hasattr(attr_value, "bind_tools"):
-                    model = attr_value
-                    break
-        if model:
-            break
-    
-    # Fallback: if we still don't have a model, try the last step
-    # (this handles cases without structured output)
-    if model is None and steps:
-        last_step = steps[-1]
-        # Only use it if it's not a parser and has bind_tools
-        last_step_class_name = getattr(last_step, "__class__", type(last_step)).__name__
-        if "Parser" not in last_step_class_name and hasattr(last_step, "bind_tools"):
-            model = last_step
-    
-    if model is None:
-        step_types = [getattr(step, "__class__", type(step)).__name__ for step in steps] if steps else []
-        raise ValueError(
-            f"Could not extract model from LangSmith prompt chain. "
-            f"Found {len(steps)} steps with types: {step_types}. "
-            "Make sure the chain contains a model with bind_tools method. "
-            "If using structured output, the model should be before the JsonOutputParser."
-        )
-    
-    logger.info(f"Extracted model: {type(model).__name__}")
-
     # Extract initial system prompt (used as fallback)
-    initial_system_prompt = _extract_system_prompt_from_chain(initial_prompt_chain)
+    initial_system_prompt = _extract_system_prompt_from_chain(config.langsmith_prompt_chain)
     if not initial_system_prompt:
         logger.warning("Could not extract initial system prompt from LangSmith chain")
 

@@ -10,7 +10,7 @@ import logging
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 
-from .agent import create_agent_runnable
+from .agent import create_agent_runnable, _extract_model_from_chain
 from .config import AgentConfig
 from .state import State
 
@@ -118,8 +118,11 @@ def graph(config: RunnableConfig | None = None):
             except Exception as e:
                 logger.warning(f"Could not reload verify prompt: {e}, using cached prompt")
 
-    # Create fresh agent with latest prompt
-    agent_runnable = create_agent_runnable(config)
+    # Extract model from the reloaded prompt chain
+    model = _extract_model_from_chain(config.langsmith_prompt_chain)
+    
+    # Create fresh agent with latest prompt and model
+    agent_runnable = create_agent_runnable(model, config)
     _configure_tool_node(agent_runnable)
     
     # Create a simple explicit graph that wraps the agent
