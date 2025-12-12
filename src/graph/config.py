@@ -16,7 +16,7 @@ class AgentConfig:
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Load configuration from environment variables."""
-        langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
+        langsmith_api_key = os.getenv("LANGGRAPH_API_KEY")
         if not langsmith_api_key:
             raise ValueError("LANGSMITH_API_KEY environment variable is required")
         dev_mode = os.getenv("DEV_MODE", "false").lower() in ("true", "1", "yes")
