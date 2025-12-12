@@ -1,12 +1,17 @@
 """Main graph definition."""
 
+import logging
+
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from src.graph.config import AgentConfig
 from src.graph.nodes import format_questions_node, user_agent_node
 from src.graph.prompts import set_config
 from src.graph.state import GraphState
+
+logger = logging.getLogger(__name__)
 
 
 def create_graph(config: AgentConfig | None = None):
@@ -65,5 +70,25 @@ def create_graph(config: AgentConfig | None = None):
     return graph.compile()
 
 
+def make_graph(config: RunnableConfig | None = None):
+    """Make graph function for LangGraph rebuild at runtime.
+
+    This function is called by LangGraph on each run when configured in langgraph.json.
+    Nodes will fetch fresh prompts/models from LangSmith on each invocation.
+
+    Args:
+        config: RunnableConfig from LangGraph. Can contain configurable parameters.
+
+    Returns:
+        Compiled graph instance.
+    """
+    # Load config from environment
+    agent_config = AgentConfig.from_env()
+
+    # Create graph - nodes will fetch fresh prompts on each invocation
+    return create_graph(agent_config)
+
+
 # Create the graph (config will be loaded from env if not provided)
+# This is kept for backwards compatibility, but langgraph.json should use make_graph
 graph = create_graph()

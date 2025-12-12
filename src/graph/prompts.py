@@ -70,3 +70,30 @@ async def load_prompt(
     except Exception as e:
         logger.error(f"Failed to load prompt '{prompt_name}' from LangSmith: {e}")
         raise
+
+
+def extract_prompt_and_model(chain):
+    """Extract prompt template and model from RunnableSequence.
+
+    Args:
+        chain: RunnableSequence from LangSmith (prompt | model)
+
+    Returns:
+        Tuple of (prompt_template, model)
+    """
+    return chain.first, chain.last
+
+
+def extract_system_prompt(prompt_template):
+    """Extract system prompt from ChatPromptTemplate.
+
+    Args:
+        prompt_template: ChatPromptTemplate from LangSmith
+
+    Returns:
+        System prompt string, or empty string if not found
+    """
+    for msg_template in prompt_template.messages:
+        if hasattr(msg_template, "prompt") and hasattr(msg_template.prompt, "template"):
+            return msg_template.prompt.template
+    return ""

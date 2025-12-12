@@ -5,14 +5,15 @@ import logging
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage
 
-from src.graph.prompts import load_prompt
+from src.graph.prompts import (
+    extract_prompt_and_model,
+    extract_system_prompt,
+    load_prompt,
+)
 from src.graph.state import GraphState
 from src.graph.tools.mcp_tools import get_mcp_tools
 
 logger = logging.getLogger(__name__)
-
-# Create user agent once (lazy-loaded)
-_user_agent = None
 
 
 async def _create_user_agent():
@@ -22,17 +23,10 @@ async def _create_user_agent():
     chain = await load_prompt("user-agent", include_model=True)
 
     # Extract model and prompt from RunnableSequence
-    # chain.first is the prompt template, chain.last is the model
-    prompt_template = chain.first
-    model = chain.last
+    prompt_template, model = extract_prompt_and_model(chain)
 
     # Extract system prompt from ChatPromptTemplate
-    # Find the system message in the prompt template
-    system_prompt = ""
-    for msg_template in prompt_template.messages:
-        if hasattr(msg_template, "prompt") and hasattr(msg_template.prompt, "template"):
-            system_prompt = msg_template.prompt.template
-            break
+    system_prompt = extract_system_prompt(prompt_template)
 
     # Load MCP tools - only discovery tools for now
     tools = await get_mcp_tools(allowed_tools=["get_archetypes", "get_archetype_schema"])
@@ -46,21 +40,14 @@ async def _create_user_agent():
     return agent
 
 
-async def _get_user_agent():
-    """Lazy load user agent."""
-    global _user_agent
-    if _user_agent is None:
-        _user_agent = await _create_user_agent()
-    return _user_agent
-
-
 async def user_agent_node(state: GraphState) -> GraphState:
     """User agent node - analyzes input and composes questions.
 
     Stores agent output in _user_agent_output instead of messages
     so it's not visible to the user until formatted.
     """
-    agent = await _get_user_agent()
+    # Create agent fresh on each invocation
+    agent = await _create_user_agent()
     result = await agent.ainvoke(state)
 
     # Extract the last AIMessage (agent's output) and store it separately

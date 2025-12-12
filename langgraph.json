@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "agent": "src.graph:graph"
+    "agent": "src.graph.graph:make_graph"
   },
   "env": ".env"
 }
