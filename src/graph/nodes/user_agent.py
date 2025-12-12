@@ -35,37 +35,42 @@ async def _create_user_agent():
         logger.warning("No MCP tools loaded. Agent will have limited functionality.")
 
     # Create agent with model and system prompt from LangSmith
+    # No structured output - user_agent just analyzes and prepares for formatter
     agent = create_agent(model, tools=tools, system_prompt=system_prompt)
 
     return agent
 
 
 async def user_agent_node(state: GraphState) -> GraphState:
-    """User agent node - analyzes input and composes questions.
+    """User agent node - analyzes input and prepares questions.
 
-    Stores agent output in _user_agent_output instead of messages
-    so it's not visible to the user until formatted.
+    This agent analyzes the user input, stores output in _user_agent_output,
+    and removes it from messages so it's not shown to the user.
     """
     # Create agent fresh on each invocation
     agent = await _create_user_agent()
     result = await agent.ainvoke(state)
 
-    # Extract the last AIMessage (agent's output) and store it separately
-    # Remove it from messages so it's not shown to the user
+    # Extract the last AIMessage from user_agent (its output)
     messages = result.get("messages", [])
-    agent_message = None
+    user_agent_output = None
 
-    # Find and remove the last AIMessage
-    new_messages = []
+    # Find the last AIMessage from the user agent
     for msg in reversed(messages):
-        if agent_message is None and isinstance(msg, AIMessage):
-            agent_message = msg
-        else:
-            new_messages.insert(0, msg)
+        if isinstance(msg, AIMessage):
+            user_agent_output = msg
+            break
 
-    # Store agent output separately, remove from messages
-    if agent_message:
-        result["_user_agent_output"] = agent_message
-        result["messages"] = new_messages
+    # Store user agent output temporarily and remove from messages
+    # This hides the user agent's output from the user
+    if user_agent_output:
+        # Remove the AIMessage from messages (it will be hidden)
+        # Keep all other messages (HumanMessage, tool messages, etc.)
+        filtered_messages = [msg for msg in messages if msg != user_agent_output]
+
+        return {
+            "messages": filtered_messages,  # Remove user agent's AIMessage
+            "_user_agent_output": user_agent_output,  # Store temporarily for formatter
+        }
 
     return result

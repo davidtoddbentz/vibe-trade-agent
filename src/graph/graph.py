@@ -2,12 +2,11 @@
 
 import logging
 
-from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from src.graph.config import AgentConfig
-from src.graph.nodes import format_questions_node, user_agent_node
+from src.graph.nodes import format_questions_node, supervisor_node, user_agent_node
 from src.graph.prompts import set_config
 from src.graph.state import GraphState
 
@@ -15,7 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 def create_graph(config: AgentConfig | None = None):
-    """Create the graph with user agent and format questions nodes.
+    """Create the graph with state machine routing.
+
+    Flow:
+    - Start with state="Question" → user_agent → formatter → END (formatter sets state="Answer")
+    - Start with state="Answer" → supervisor → END (supervisor sets state="Complete")
 
     Args:
         config: Optional AgentConfig. If not provided, loads from environment variables.
@@ -29,43 +32,52 @@ def create_graph(config: AgentConfig | None = None):
 
     # Add nodes
     graph.add_node("user_agent", user_agent_node)
-    graph.add_node("format_questions", format_questions_node)
+    graph.add_node("formatter", format_questions_node)
+    graph.add_node("supervisor", supervisor_node)
 
-    # Set entry point
-    graph.set_entry_point("user_agent")
+    # Entry point routing based on state
+    def route_entry(state: GraphState) -> str:
+        """Route at entry point based on state field.
 
-    # Route from user_agent to format_questions when agent is done
-    def route_after_user_agent(state: GraphState) -> str:
-        """Route after user agent completes.
-
-        Checks for _user_agent_output (agent's message stored separately)
-        to determine if agent is done and ready for formatting.
+        - "Question" or None → user_agent
+        - "Answer" → supervisor
+        - "Complete" → END
+        - "Error" → END (or error handling node if we add one)
         """
-        # Check if agent has output stored (means agent completed)
-        agent_output = state.get("_user_agent_output")
-        if agent_output:
-            # Check if agent is still processing tool calls
-            if isinstance(agent_output, AIMessage):
-                if hasattr(agent_output, "tool_calls") and agent_output.tool_calls:
-                    # Still processing tool calls, wait
-                    return END
-            # Agent is done, go to formatting
-            return "format_questions"
+        current_state = state.get("state")
 
-        return END
+        if current_state == "Answer":
+            logger.info("State is Answer, routing to supervisor")
+            return "supervisor"
+        elif current_state == "Complete":
+            logger.info("State is Complete, routing to END")
+            return END
+        elif current_state == "Error":
+            logger.warning("State is Error, routing to END")
+            return END
+        else:
+            # "Question" or None (initial state) → start with user_agent
+            logger.info("State is Question/None, routing to user_agent")
+            return "user_agent"
 
-    # Add conditional edge from user_agent
-    graph.add_conditional_edges(
-        "user_agent",
-        route_after_user_agent,
+    # Set conditional entry point
+    graph.set_conditional_entry_point(
+        route_entry,
         {
-            "format_questions": "format_questions",
+            "user_agent": "user_agent",
+            "supervisor": "supervisor",
             END: END,
         },
     )
 
-    # Format questions always goes to END
-    graph.add_edge("format_questions", END)
+    # user_agent always goes to formatter
+    graph.add_edge("user_agent", "formatter")
+
+    # formatter always goes to END (but sets state to "Answer" first)
+    graph.add_edge("formatter", END)
+
+    # supervisor always goes to END (but sets state to "Complete" first)
+    graph.add_edge("supervisor", END)
 
     return graph.compile()
 

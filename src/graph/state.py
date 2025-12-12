@@ -1,6 +1,6 @@
 """State schema for the graph."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph.message import add_messages
@@ -13,5 +13,6 @@ class GraphState(TypedDict, total=False):
     """State schema for the graph."""
 
     messages: Annotated[list[BaseMessage], add_messages]
+    state: Literal["Question", "Answer", "Error", "Complete"]  # State machine state
     _user_agent_output: AIMessage  # Temporary storage for user agent output (not shown to user)
-    formatted_questions: FormattedQuestions  # Structured questions parsed from user agent
+    formatted_questions: FormattedQuestions  # Structured questions parsed from formatter
