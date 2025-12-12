@@ -58,7 +58,7 @@ def mock_mcp_server(port: int = 8888) -> Generator[str, None, None]:
         pass
 
 
-def test_get_mcp_tools_loads_all_tools():
+async def test_get_mcp_tools_loads_all_tools():
     """Test that get_mcp_tools loads all tools from mock server."""
     # Import here to avoid triggering graph creation during test collection
     from src.graph.tools.mcp_tools import get_mcp_tools
@@ -69,7 +69,7 @@ def test_get_mcp_tools_loads_all_tools():
             mcp_auth_token=None,
         )
 
-        tools = get_mcp_tools(config=config)
+        tools = await get_mcp_tools(config=config)
 
         # Should load all 4 tools from mock server
         assert len(tools) == 4
@@ -77,7 +77,7 @@ def test_get_mcp_tools_loads_all_tools():
         assert tool_names == {"test_tool_1", "test_tool_2", "get_archetypes", "get_archetype_schema"}
 
 
-def test_get_mcp_tools_filters_by_allowed_tools():
+async def test_get_mcp_tools_filters_by_allowed_tools():
     """Test that get_mcp_tools filters tools when allowed_tools is provided."""
     from src.graph.tools.mcp_tools import get_mcp_tools
 
@@ -87,7 +87,7 @@ def test_get_mcp_tools_filters_by_allowed_tools():
             mcp_auth_token=None,
         )
 
-        tools = get_mcp_tools(
+        tools = await get_mcp_tools(
             allowed_tools=["get_archetypes", "get_archetype_schema"],
             config=config,
         )
@@ -98,7 +98,7 @@ def test_get_mcp_tools_filters_by_allowed_tools():
         assert tool_names == {"get_archetypes", "get_archetype_schema"}
 
 
-def test_get_mcp_tools_handles_missing_tools():
+async def test_get_mcp_tools_handles_missing_tools():
     """Test that get_mcp_tools handles case where allowed_tools don't exist."""
     from src.graph.tools.mcp_tools import get_mcp_tools
 
@@ -108,7 +108,7 @@ def test_get_mcp_tools_handles_missing_tools():
             mcp_auth_token=None,
         )
 
-        tools = get_mcp_tools(
+        tools = await get_mcp_tools(
             allowed_tools=["nonexistent_tool"],
             config=config,
         )
@@ -117,7 +117,7 @@ def test_get_mcp_tools_handles_missing_tools():
         assert len(tools) == 0
 
 
-def test_get_mcp_tools_handles_server_unavailable():
+async def test_get_mcp_tools_handles_server_unavailable():
     """Test that get_mcp_tools handles server unavailable gracefully."""
     from src.graph.tools.mcp_tools import get_mcp_tools
 
@@ -126,13 +126,13 @@ def test_get_mcp_tools_handles_server_unavailable():
         mcp_auth_token=None,
     )
 
-    tools = get_mcp_tools(config=config)
+    tools = await get_mcp_tools(config=config)
 
     # Should return empty list without raising exception
     assert len(tools) == 0
 
 
-def test_get_mcp_tools_uses_config_from_env_when_not_provided(monkeypatch):
+async def test_get_mcp_tools_uses_config_from_env_when_not_provided(monkeypatch):
     """Test that get_mcp_tools loads config from env when config not provided."""
     from src.graph.tools.mcp_tools import get_mcp_tools
 
@@ -140,7 +140,7 @@ def test_get_mcp_tools_uses_config_from_env_when_not_provided(monkeypatch):
         monkeypatch.setenv("MCP_SERVER_URL", server_url)
         monkeypatch.setenv("MCP_AUTH_TOKEN", "")
 
-        tools = get_mcp_tools()
+        tools = await get_mcp_tools()
 
         # Should still load tools using env config
         assert len(tools) > 0

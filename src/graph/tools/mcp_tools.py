@@ -11,7 +11,6 @@ The MCP server (vibe-trade-mcp) provides the following tools:
 
 See: ../vibe-trade-mcp/README.md for more details.
 """
-import asyncio
 import logging
 
 from langchain_core.tools import BaseTool
@@ -23,7 +22,7 @@ from src.graph.config import AgentConfig
 logger = logging.getLogger(__name__)
 
 
-def get_mcp_tools(
+async def get_mcp_tools(
     allowed_tools: list[str] | None = None,
     config: AgentConfig | None = None,
 ) -> list[BaseTool]:
@@ -39,10 +38,10 @@ def get_mcp_tools(
 
     Examples:
         # Only allow specific tools
-        tools = get_mcp_tools(allowed_tools=["get_archetypes", "get_archetype_schema"])
+        tools = await get_mcp_tools(allowed_tools=["get_archetypes", "get_archetype_schema"])
 
         # Load all tools (default)
-        tools = get_mcp_tools()
+        tools = await get_mcp_tools()
     """
     if config is None:
         config = AgentConfig.from_env()
@@ -61,12 +60,9 @@ def get_mcp_tools(
 
         # Load tools - for streamable_http, tools create new sessions per call
         # Pass connection directly so tools can create sessions on demand
-        async def _load_tools():
-            # For streamable_http, we can pass connection or None to let tools create sessions
-            # Passing None makes tools create new sessions for each call
-            return await load_mcp_tools(None, connection=connection)
-
-        tools = asyncio.run(_load_tools())
+        # For streamable_http, we can pass connection or None to let tools create sessions
+        # Passing None makes tools create new sessions for each call
+        tools = await load_mcp_tools(None, connection=connection)
 
         # Filter tools if allowed_tools is provided (None means allow all)
         if allowed_tools is not None:
