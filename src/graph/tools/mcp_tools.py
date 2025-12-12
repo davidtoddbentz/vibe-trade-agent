@@ -11,6 +11,7 @@ The MCP server (vibe-trade-mcp) provides the following tools:
 
 See: ../vibe-trade-mcp/README.md for more details.
 """
+
 import logging
 
 from langchain_core.tools import BaseTool
@@ -82,4 +83,3 @@ async def get_mcp_tools(
         # Log error but don't fail - agent can work without MCP tools
         logger.warning(f"Could not load MCP tools: {e}", exc_info=True)
         return []
-

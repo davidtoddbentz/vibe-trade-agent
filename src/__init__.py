@@ -1,2 +1,1 @@
 """Vibe Trade Agent package."""
-

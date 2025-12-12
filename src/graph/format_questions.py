@@ -1,26 +1,37 @@
 """Node for parsing questions into structured objects."""
+
 import logging
 
-from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage
-
 from src.graph.models import FormattedQuestions
+from src.graph.prompts import load_prompt
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
 
 
-# Lazy-loaded model
-_format_model = None
+# Lazy-loaded chain with structured output
+_format_chain = None
 
 
-def _get_format_model():
-    """Lazy load formatting model with structured output."""
-    global _format_model
-    if _format_model is None:
-        model = init_chat_model("gpt-4o-mini")
-        _format_model = model.with_structured_output(FormattedQuestions)
-    return _format_model
+async def _get_format_chain():
+    """Lazy load formatting chain with structured output from LangSmith prompt."""
+    global _format_chain
+    if _format_chain is None:
+        # Load prompt from LangSmith (includes model configuration)
+        # Returns a RunnableSequence (prompt | model) when include_model=True
+        chain = await load_prompt("formatter", include_model=True)
+
+        # Extract prompt template and model from the chain
+        prompt_template = chain.first
+        model = chain.last
+
+        # Apply structured output to the model (not the entire chain)
+        model_with_output = model.with_structured_output(FormattedQuestions)
+
+        # Create new chain: prompt_template | model_with_output
+        # The prompt template expects 'agent_message_content' as input
+        _format_chain = prompt_template | model_with_output
+    return _format_chain
 
 
 async def format_questions_node(state: GraphState) -> GraphState:
@@ -37,29 +48,18 @@ async def format_questions_node(state: GraphState) -> GraphState:
         logger.warning("No user agent output found to parse")
         return state
 
-    model = _get_format_model()
+    # Get the formatting chain (prompt | model with structured output)
+    chain = await _get_format_chain()
 
-    # Create a prompt to parse questions into structured format
-    parse_prompt = f"""Parse the following questions and categorize them into multiple choice and free-form questions:
-
-{agent_message.content}
-
-Extract:
-- Multiple choice questions: questions with discrete answer options (A, B, C, etc.)
-- Free-form questions: questions requiring text/numeric input
-
-For multiple choice questions, extract:
-  - The question text
-  - All options with their letters (A, B, C, etc.) and option text
-
-For free-form questions, extract:
-  - The question text
-  - Any placeholder or hint text if provided
-
-Only extract questions that are actually present in the input. Do not create new questions."""
-
-    # Get structured output - returns FormattedQuestions object
-    formatted_questions = await model.ainvoke([HumanMessage(content=parse_prompt)])
+    # Invoke the chain with template variables
+    # The LangSmith prompt expects 'agent_message_content' and 'question'
+    # Since we don't have a separate question, we use agent_message.content for both
+    formatted_questions = await chain.ainvoke(
+        {
+            "agent_message_content": agent_message.content,
+            "question": agent_message.content,  # Provide same content if prompt expects both
+        }
+    )
 
     # Store structured questions in state, clear temp storage
     # Don't add anything to messages - just store the structured data
@@ -67,4 +67,3 @@ Only extract questions that are actually present in the input. Do not create new
         "formatted_questions": formatted_questions,
         "_user_agent_output": None,  # Clear the temporary storage
     }
-

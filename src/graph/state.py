@@ -1,4 +1,5 @@
 """State schema for the graph."""
+
 from typing import Annotated
 
 from langchain_core.messages import AIMessage, BaseMessage

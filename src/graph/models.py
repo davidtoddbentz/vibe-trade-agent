@@ -1,4 +1,5 @@
 """Pydantic models for structured data."""
+
 from pydantic import BaseModel, Field
 
 
@@ -13,9 +14,7 @@ class MultipleChoiceQuestion(BaseModel):
     """A multiple choice question."""
 
     question: str = Field(description="The question text")
-    options: list[MultipleChoiceOption] = Field(
-        description="List of answer options with letters"
-    )
+    options: list[MultipleChoiceOption] = Field(description="List of answer options with letters")
 
 
 class FreeFormQuestion(BaseModel):
@@ -39,4 +38,3 @@ class FormattedQuestions(BaseModel):
         default_factory=list,
         description="List of free-form response questions",
     )
-

@@ -1,14 +1,26 @@
 """Main graph definition."""
+
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 
+from src.graph.config import AgentConfig
 from src.graph.format_questions import format_questions_node
+from src.graph.prompts import set_config
 from src.graph.state import GraphState
 from src.graph.user_agent_node import user_agent_node
 
 
-def create_graph():
-    """Create the graph with user agent and format questions nodes."""
+def create_graph(config: AgentConfig | None = None):
+    """Create the graph with user agent and format questions nodes.
+
+    Args:
+        config: Optional AgentConfig. If not provided, loads from environment variables.
+    """
+    # Initialize config globally for prompt loading
+    if config is None:
+        config = AgentConfig.from_env()
+    set_config(config)
+
     graph = StateGraph(GraphState)
 
     # Add nodes
@@ -45,7 +57,7 @@ def create_graph():
         {
             "format_questions": "format_questions",
             END: END,
-        }
+        },
     )
 
     # Format questions always goes to END
@@ -54,5 +66,5 @@ def create_graph():
     return graph.compile()
 
 
-# Create the graph
+# Create the graph (config will be loaded from env if not provided)
 graph = create_graph()

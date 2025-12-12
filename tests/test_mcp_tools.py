@@ -1,4 +1,5 @@
 """Tests for MCP tools loading."""
+
 import threading
 import time
 from collections.abc import Generator
@@ -74,7 +75,12 @@ async def test_get_mcp_tools_loads_all_tools():
         # Should load all 4 tools from mock server
         assert len(tools) == 4
         tool_names = {tool.name for tool in tools}
-        assert tool_names == {"test_tool_1", "test_tool_2", "get_archetypes", "get_archetype_schema"}
+        assert tool_names == {
+            "test_tool_1",
+            "test_tool_2",
+            "get_archetypes",
+            "get_archetype_schema",
+        }
 
 
 async def test_get_mcp_tools_filters_by_allowed_tools():
@@ -144,4 +150,3 @@ async def test_get_mcp_tools_uses_config_from_env_when_not_provided(monkeypatch)
 
         # Should still load tools using env config
         assert len(tools) > 0
-
