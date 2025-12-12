@@ -2,28 +2,24 @@
 
 import logging
 
-from src.graph.models import FormattedQuestions
-from src.graph.prompts import extract_prompt_and_model, load_prompt
+from src.graph.prompts import load_prompt
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
 
 
 async def _create_format_chain():
-    """Create formatting chain with structured output from LangSmith prompt."""
-    # Load prompt from LangSmith (includes model configuration)
-    # Returns a RunnableSequence (prompt | model) when include_model=True
+    """Create formatting chain from LangSmith prompt.
+
+    The prompt in LangSmith should have structured output configured.
+    Returns the chain directly from LangSmith.
+    """
+    # Load prompt from LangSmith (includes model and structured output configuration)
+    # Returns a RunnableSequence (prompt | model | parser) with structured output
     chain = await load_prompt("formatter", include_model=True)
 
-    # Extract prompt template and model from the chain
-    prompt_template, model = extract_prompt_and_model(chain)
-
-    # Apply structured output to the model (not the entire chain)
-    model_with_output = model.with_structured_output(FormattedQuestions)
-
-    # Create new chain: prompt_template | model_with_output
-    # The prompt template expects 'agent_message_content' as input
-    return prompt_template | model_with_output
+    logger.info("Using formatting chain from LangSmith (with structured output)")
+    return chain
 
 
 async def format_questions_node(state: GraphState) -> GraphState:

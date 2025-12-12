@@ -3,27 +3,13 @@
 from pydantic import BaseModel, Field
 
 
-class MultipleChoiceOption(BaseModel):
-    """A single option in a multiple choice question."""
-
-    letter: str = Field(description="The option letter (A, B, C, etc.)")
-    text: str = Field(description="The option text")
-
-
 class MultipleChoiceQuestion(BaseModel):
-    """A multiple choice question."""
+    """A multiple choice question with question text and answer options."""
 
     question: str = Field(description="The question text")
-    options: list[MultipleChoiceOption] = Field(description="List of answer options with letters")
-
-
-class FreeFormQuestion(BaseModel):
-    """A free-form text response question."""
-
-    question: str = Field(description="The question text")
-    placeholder: str | None = Field(
-        default=None,
-        description="Optional placeholder or hint text for the input field",
+    answers: list[str] = Field(
+        description="List of answer options as strings",
+        min_length=2,
     )
 
 
@@ -34,7 +20,7 @@ class FormattedQuestions(BaseModel):
         default_factory=list,
         description="List of multiple choice questions",
     )
-    free_form: list[FreeFormQuestion] = Field(
+    free_form: list[str] = Field(
         default_factory=list,
-        description="List of free-form response questions",
+        description="List of free-form response questions as strings",
     )

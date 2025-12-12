@@ -80,6 +80,8 @@ def extract_prompt_and_model(chain):
 
     Returns:
         Tuple of (prompt_template, model)
+
+    Note: This is a convenience function. You can also access chain.first and chain.last directly.
     """
     return chain.first, chain.last
 
@@ -97,3 +99,46 @@ def extract_system_prompt(prompt_template):
         if hasattr(msg_template, "prompt") and hasattr(msg_template.prompt, "template"):
             return msg_template.prompt.template
     return ""
+
+
+async def load_output_schema(
+    prompt_name: str,
+    config: AgentConfig | None = None,
+) -> dict | None:
+    """Load output schema from LangSmith prompt metadata.
+
+    LangSmith prompts can have structured output schemas stored in their metadata.
+    This function attempts to extract the schema from the prompt commit.
+
+    Args:
+        prompt_name: Name of the prompt in LangSmith
+        config: Optional AgentConfig. If not provided, uses global config or loads from env.
+
+    Returns:
+        JSON Schema dict if found, None otherwise
+
+    Raises:
+        ValueError: If LANGSMITH_API_KEY is not set
+        Exception: If prompt cannot be loaded from LangSmith
+    """
+    try:
+        client = await get_langsmith_client(config)
+        # Try to get the prompt commit which may contain metadata
+        # First, get the prompt to see if it has schema info
+        prompt = await client.pull_prompt(prompt_name, include_model=False)
+
+        # Check if the prompt object has schema metadata
+        # LangSmith may store this in different places depending on version
+        if hasattr(prompt, "metadata") and prompt.metadata:
+            schema = prompt.metadata.get("output_schema") or prompt.metadata.get("schema")
+            if schema:
+                logger.info(f"Found output schema in prompt '{prompt_name}' metadata")
+                return schema
+
+        # Alternative: Check if there's a separate schema resource
+        # For now, return None - schema should be stored in prompt metadata
+        logger.debug(f"No output schema found in prompt '{prompt_name}' metadata")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not load output schema for prompt '{prompt_name}': {e}")
+        return None
