@@ -4,10 +4,9 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 
 from src.graph.config import AgentConfig
-from src.graph.format_questions import format_questions_node
+from src.graph.nodes import format_questions_node, user_agent_node
 from src.graph.prompts import set_config
 from src.graph.state import GraphState
-from src.graph.user_agent_node import user_agent_node
 
 
 def create_graph(config: AgentConfig | None = None):
