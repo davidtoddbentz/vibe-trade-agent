@@ -1,78 +1,70 @@
-"""Node for formatting questions nicely."""
+"""Node for parsing questions into structured objects."""
 import logging
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
+from src.graph.models import FormattedQuestions
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
 
-FORMAT_PROMPT = (
-    "You are a formatting assistant. Your job is to take questions from another agent "
-    "and format them in a clear, professional, and user-friendly way.\n\n"
-    "Guidelines:\n"
-    "- Preserve the content and meaning of the questions\n"
-    "- Format multiple choice questions clearly with proper lettering (A, B, C, etc.)\n"
-    "- Format free-form questions naturally\n"
-    "- Use proper spacing and structure for readability\n"
-    "- Keep the tone friendly and professional\n"
-    "- Don't add new questions, only format what's provided\n\n"
-    "Output the formatted questions clearly. Do nothing else."
-)
 
 # Lazy-loaded model
 _format_model = None
 
 
 def _get_format_model():
-    """Lazy load formatting model."""
+    """Lazy load formatting model with structured output."""
     global _format_model
     if _format_model is None:
-        _format_model = init_chat_model("gpt-4o-mini")
+        model = init_chat_model("gpt-4o-mini")
+        _format_model = model.with_structured_output(FormattedQuestions)
     return _format_model
 
 
 async def format_questions_node(state: GraphState) -> GraphState:
-    """Format questions from the user agent."""
+    """Parse questions from user agent into structured objects.
+
+    This is a transformation node, not an agent. It parses the user agent's
+    output into structured question objects and stores them in state.
+    The UI will handle rendering these structured objects.
+    """
     # Get the user agent's output from the temporary storage
     agent_message = state.get("_user_agent_output")
 
     if not agent_message:
-        logger.warning("No user agent output found to format")
+        logger.warning("No user agent output found to parse")
         return state
 
-    messages = state.get("messages", [])
-
-    # Get formatting model
     model = _get_format_model()
 
-    # Create a prompt with the questions to format
-    format_prompt = f"""Format the following questions in a clear, professional way:
+    # Create a prompt to parse questions into structured format
+    parse_prompt = f"""Parse the following questions and categorize them into multiple choice and free-form questions:
 
 {agent_message.content}
 
-Remember to:
-- Preserve all questions and their content
-- Format multiple choice questions with clear lettering
-- Make free-form questions natural and readable
-- Keep the tone friendly and professional"""
+Extract:
+- Multiple choice questions: questions with discrete answer options (A, B, C, etc.)
+- Free-form questions: questions requiring text/numeric input
 
-    # Get formatted output (async)
-    formatted_response = await model.ainvoke([HumanMessage(content=format_prompt)])
+For multiple choice questions, extract:
+  - The question text
+  - All options with their letters (A, B, C, etc.) and option text
 
-    # Create formatted message
-    formatted_message = AIMessage(
-        content=formatted_response.content,
-        response_metadata=agent_message.response_metadata if hasattr(agent_message, "response_metadata") else {}
-    )
+For free-form questions, extract:
+  - The question text
+  - Any placeholder or hint text if provided
 
-    # Add the formatted message to messages (agent's raw output was never in messages)
-    new_messages = list(messages) + [formatted_message]
+Only extract questions that are actually present in the input. Do not create new questions."""
 
-    # Clear the temporary storage
+    # Get structured output - returns FormattedQuestions object
+    formatted_questions = await model.ainvoke([HumanMessage(content=parse_prompt)])
+
+    # Store structured questions in state, clear temp storage
+    # Don't add anything to messages - just store the structured data
     return {
-        "messages": new_messages,
+        "formatted_questions": formatted_questions,
         "_user_agent_output": None,  # Clear the temporary storage
     }
 
