@@ -1,5 +1,7 @@
 """Pydantic models for structured data."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -23,4 +25,21 @@ class FormattedQuestions(BaseModel):
     free_form: list[str] = Field(
         default_factory=list,
         description="List of free-form response questions as strings",
+    )
+
+
+class BuilderResult(BaseModel):
+    """Structured output from the builder agent."""
+
+    strategy_id: str | None = Field(
+        None,
+        description="The UUID of the strategy that was created, if any. Use this when calling verify.",
+    )
+    status: Literal["complete", "in_progress", "needs_user_input", "impossible"] = Field(
+        description="Status of the build operation"
+    )
+    message: str = Field(description="Human-readable message about what was done or what is needed")
+    card_ids: list[str] = Field(
+        default_factory=list,
+        description="UUIDs of cards that were created during this operation",
     )

@@ -82,9 +82,7 @@ def extract_prompt_and_model(chain):
         Tuple of (prompt_template, model)
 
     Note: If the chain has structured output (e.g., JsonOutputParser),
-    we need to find the model before the parser. The chain structure might be:
-    - prompt | model | parser (flat)
-    - prompt | (model | parser) (nested)
+    we need to find the model before the parser.
     """
     from langchain_core.output_parsers import BaseOutputParser
     from langchain_core.runnables import RunnableSequence
@@ -96,7 +94,6 @@ def extract_prompt_and_model(chain):
         return prompt_template, chain.last
 
     # If chain.last is a parser, we need to find the model before it
-    # Check if last is a parser
     is_parser = (
         hasattr(chain.last, "parse")
         or isinstance(chain.last, BaseOutputParser)
@@ -104,79 +101,23 @@ def extract_prompt_and_model(chain):
     )
 
     if is_parser:
-        # Chain structure: prompt | model | parser (or nested)
-        # We need to extract the model
+        # Most common case: flat structure prompt | model | parser
+        # Check if chain has 'steps' attribute
+        if hasattr(chain, "steps") and len(chain.steps) >= 2:
+            model = chain.steps[-2]
+            if hasattr(model, "bind_tools"):
+                return prompt_template, model
 
-        # Method 1: Check if chain has 'steps' attribute (flat structure)
-        if hasattr(chain, "steps"):
-            # steps is typically a list: [prompt, model, parser]
-            # Get the second-to-last (the model)
-            if len(chain.steps) >= 2:
-                model = chain.steps[-2]
-                if hasattr(model, "bind_tools"):
-                    return prompt_template, model
-
-        # Method 2: Handle nested structure: prompt | (model | parser)
-        # If chain.last is a parser, check if chain.middle exists and is a RunnableSequence
-        if hasattr(chain, "middle"):
-            middle = chain.middle
-            # If middle is a RunnableSequence, it might be (model | parser)
-            if isinstance(middle, RunnableSequence):
-                # Check if middle.first is the model
-                if hasattr(middle.first, "bind_tools"):
-                    return prompt_template, middle.first
-                # Or middle.last might be the model (if nested differently)
-                if hasattr(middle.last, "bind_tools"):
-                    return prompt_template, middle.last
-            # If middle is directly the model
-            elif hasattr(middle, "bind_tools"):
-                return prompt_template, middle
-
-        # Method 3: Try to traverse nested RunnableSequence structures
-        # The chain might be: prompt | RunnableSequence(model | parser)
-        # So chain.last is actually a RunnableSequence containing (model | parser)
+        # Fallback: nested structure prompt | (model | parser)
         if isinstance(chain.last, RunnableSequence):
-            # chain.last is (model | parser), so model is chain.last.first
             if hasattr(chain.last.first, "bind_tools"):
                 return prompt_template, chain.last.first
-
-        # Method 4: Try accessing through internal attributes
-        # Some RunnableSequence implementations store steps differently
-        try:
-            for attr_name in ["steps", "runnables", "chain", "first_steps", "last_steps"]:
-                if hasattr(chain, attr_name):
-                    steps = getattr(chain, attr_name)
-                    if isinstance(steps, (list, tuple)) and len(steps) >= 2:
-                        # Check second-to-last element
-                        model_candidate = steps[-2]
-                        if hasattr(model_candidate, "bind_tools"):
-                            return prompt_template, model_candidate
-                        # Also check if it's a nested sequence
-                        if isinstance(model_candidate, RunnableSequence):
-                            if hasattr(model_candidate.first, "bind_tools"):
-                                return prompt_template, model_candidate.first
-        except Exception:
-            pass
-
-        # Method 5: Try to inspect the chain's __dict__ for internal structure
-        try:
-            if hasattr(chain, "__dict__"):
-                # Look for any attribute that might contain the model
-                for _key, value in chain.__dict__.items():
-                    if isinstance(value, RunnableSequence):
-                        # Check if this nested sequence contains the model
-                        if hasattr(value.first, "bind_tools"):
-                            return prompt_template, value.first
-        except Exception:
-            pass
 
         # If all methods fail, raise helpful error
         raise ValueError(
             f"Could not extract model from chain with structured output. "
             f"Chain.last is {type(chain.last).__name__} (a parser). "
-            f"The chain structure is: prompt | model | parser, but we couldn't access the model. "
-            f"For agent creation, you may need to configure the LangSmith prompt 'user-agent' "
-            f"without structured output, or ensure the model is accessible in the chain structure."
+            f"For agent creation, ensure the model is accessible in the chain structure."
         )
 
     # If last is not a parser and doesn't have bind_tools, it's unexpected
