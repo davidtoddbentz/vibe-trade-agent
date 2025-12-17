@@ -60,3 +60,16 @@ class StrategyParams(BaseModel):
         ...,
         description="The UUID of the strategy that was created. This must be obtained by calling the create_strategy tool.",
     )
+
+
+class StrategyCreateInput(BaseModel):
+    """Input parameters for creating a strategy (before tool call)."""
+
+    name: str = Field(
+        ...,
+        description="A descriptive name for the trading strategy, 2-7 words long",
+    )
+    universe: list[str] = Field(
+        default_factory=list,
+        description="List of trading symbols (e.g., ['BTC-USD', 'ETH-USD']). Extract from the conversation if mentioned, otherwise leave empty.",
+    )

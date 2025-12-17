@@ -5,7 +5,10 @@ import logging
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 
-from src.graph.nodes.supervisor_sub_agents import builder, verify
+from src.graph.nodes.supervisor_sub_agents import (
+    create_builder_tool,
+    create_verify_tool,
+)
 from src.graph.prompts import (
     extract_prompt_and_model,
     extract_system_prompt,
@@ -85,10 +88,13 @@ def _construct_user_request(state: GraphState) -> str:
     return "\n".join(parts)
 
 
-async def _create_supervisor_agent():
+async def _create_supervisor_agent(strategy_id: str):
     """Create the supervisor agent using prompt from LangSmith.
 
     The supervisor coordinates builder and verify sub-agents using the supervisor pattern.
+
+    Args:
+        strategy_id: Strategy ID to bind to builder and verify tools.
     """
     # Load prompt from LangSmith (includes model configuration)
     chain = await load_prompt("supervisor", include_model=True)
@@ -96,14 +102,17 @@ async def _create_supervisor_agent():
     # Extract model and prompt from RunnableSequence
     prompt_template, model = extract_prompt_and_model(chain)
 
-    # Extract system prompt from ChatPromptTemplate
+    # Extract system prompt from ChatPromptTemplate - use as-is from LangSmith
     system_prompt = extract_system_prompt(prompt_template)
 
-    # Supervisor only has access to builder and verify tools (sub-agents)
-    # These tools coordinate the specialized sub-agents
-    tools = [builder, verify]
+    # Create bound tools with strategy_id pre-filled
+    # The agent will only see request/user_request parameters, not strategy_id
+    bound_builder = create_builder_tool(strategy_id)
+    bound_verify = create_verify_tool(strategy_id)
 
-    # Create agent with model and system prompt from LangSmith
+    tools = [bound_builder, bound_verify]
+
+    # Create agent with model and system prompt from LangSmith (no modifications)
     agent = create_agent(model, tools=tools, system_prompt=system_prompt)
 
     return agent
@@ -126,17 +135,25 @@ async def supervisor_node(state: GraphState) -> GraphState:
     # This includes all conversation context including hidden messages
     user_request = _construct_user_request(state)
 
-    # Create agent fresh on each invocation
-    # The system prompt from LangSmith sets the supervisor's role
-    agent = await _create_supervisor_agent()
+    # Get strategy_id from state - required for builder and verify tools
+    strategy_id = state.get("strategy_id")
+    if not strategy_id:
+        logger.error("No strategy_id in state. Supervisor cannot proceed without a strategy.")
+        return {
+            "state": "Error",
+            "messages": state.get("messages", []),
+        }
+
+    # Create agent fresh on each invocation with bound tools
+    # The system prompt from LangSmith sets the supervisor's role (used as-is, no modifications)
+    # strategy_id is bound to tools, so agent doesn't need to pass it
+    agent = await _create_supervisor_agent(strategy_id=strategy_id)
 
     # Get messages from state - these contain the full conversation history
-    # The system prompt (from LangSmith) sets the agent's role and instructions
     messages = state.get("messages", [])
 
-    # Invoke with only messages and user_request
-    # The system prompt is already set in the agent via create_agent
-    # Passing only messages ensures the system prompt is properly applied
+    # Invoke with messages and user_request
+    # strategy_id is already bound to tools, so no need to include it in messages
     result = await agent.ainvoke(
         {
             "messages": messages,  # Full conversation history
