@@ -5,6 +5,7 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 # Import directly to avoid triggering graph creation
@@ -59,6 +60,7 @@ def mock_mcp_server(port: int = 8888) -> Generator[str, None, None]:
         pass
 
 
+@pytest.mark.asyncio
 async def test_get_mcp_tools_loads_all_tools():
     """Test that get_mcp_tools loads all tools from mock server."""
     # Import here to avoid triggering graph creation during test collection
@@ -68,6 +70,7 @@ async def test_get_mcp_tools_loads_all_tools():
         config = AgentConfig(
             mcp_server_url=server_url,
             mcp_auth_token=None,
+            langsmith_api_key="test-key",
         )
 
         tools = await get_mcp_tools(config=config)
@@ -83,6 +86,7 @@ async def test_get_mcp_tools_loads_all_tools():
         }
 
 
+@pytest.mark.asyncio
 async def test_get_mcp_tools_filters_by_allowed_tools():
     """Test that get_mcp_tools filters tools when allowed_tools is provided."""
     from src.graph.tools.mcp_tools import get_mcp_tools
@@ -91,6 +95,7 @@ async def test_get_mcp_tools_filters_by_allowed_tools():
         config = AgentConfig(
             mcp_server_url=server_url,
             mcp_auth_token=None,
+            langsmith_api_key="test-key",
         )
 
         tools = await get_mcp_tools(
@@ -104,6 +109,7 @@ async def test_get_mcp_tools_filters_by_allowed_tools():
         assert tool_names == {"get_archetypes", "get_archetype_schema"}
 
 
+@pytest.mark.asyncio
 async def test_get_mcp_tools_handles_missing_tools():
     """Test that get_mcp_tools handles case where allowed_tools don't exist."""
     from src.graph.tools.mcp_tools import get_mcp_tools
@@ -112,6 +118,7 @@ async def test_get_mcp_tools_handles_missing_tools():
         config = AgentConfig(
             mcp_server_url=server_url,
             mcp_auth_token=None,
+            langsmith_api_key="test-key",
         )
 
         tools = await get_mcp_tools(
@@ -123,6 +130,7 @@ async def test_get_mcp_tools_handles_missing_tools():
         assert len(tools) == 0
 
 
+@pytest.mark.asyncio
 async def test_get_mcp_tools_handles_server_unavailable():
     """Test that get_mcp_tools handles server unavailable gracefully."""
     from src.graph.tools.mcp_tools import get_mcp_tools
@@ -130,6 +138,7 @@ async def test_get_mcp_tools_handles_server_unavailable():
     config = AgentConfig(
         mcp_server_url="http://127.0.0.1:9999/mcp",  # Non-existent server
         mcp_auth_token=None,
+        langsmith_api_key="test-key",
     )
 
     tools = await get_mcp_tools(config=config)
@@ -138,6 +147,7 @@ async def test_get_mcp_tools_handles_server_unavailable():
     assert len(tools) == 0
 
 
+@pytest.mark.asyncio
 async def test_get_mcp_tools_uses_config_from_env_when_not_provided(monkeypatch):
     """Test that get_mcp_tools loads config from env when config not provided."""
     from src.graph.tools.mcp_tools import get_mcp_tools
