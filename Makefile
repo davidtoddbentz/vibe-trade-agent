@@ -23,12 +23,14 @@ run:
 	uv run langgraph dev'
 
 # Run tests
+# Uses LANGGRAPH_API_KEY from env if set, otherwise uses 'test-key'
 test:
-	uv run pytest tests/ -v
+	@LANGGRAPH_API_KEY=$${LANGGRAPH_API_KEY:-test-key} uv run pytest tests/ -v
 
 # Run tests with coverage
+# Uses LANGGRAPH_API_KEY from env if set, otherwise uses 'test-key'
 test-cov:
-	uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=60
+	@LANGGRAPH_API_KEY=$${LANGGRAPH_API_KEY:-test-key} uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=60
 
 # Lint code
 lint:
