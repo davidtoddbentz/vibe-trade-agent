@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def _create_builder_agent():
     """Create the builder sub-agent using prompt from LangSmith.
 
-    Builder has access to all MCP tools except compile_strategy.
+    Builder has access to all MCP tools except compile_strategy and create_strategy.
     Uses structured output to return BuilderResult.
     """
     # Load prompt from LangSmith
@@ -28,9 +28,9 @@ async def _create_builder_agent():
     prompt_template, model = extract_prompt_and_model(chain)
     system_prompt = extract_system_prompt(prompt_template)
 
-    # Load all MCP tools except compile_strategy
+    # Load all MCP tools except compile_strategy and create_strategy
     all_tools = await get_mcp_tools()
-    builder_tools = [t for t in all_tools if t.name != "compile_strategy"]
+    builder_tools = [t for t in all_tools if t.name not in ["compile_strategy", "create_strategy"]]
 
     if not builder_tools:
         logger.warning("No MCP tools loaded for builder agent.")

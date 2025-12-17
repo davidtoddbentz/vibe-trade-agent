@@ -6,7 +6,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from src.graph.config import AgentConfig
-from src.graph.nodes import format_questions_node, supervisor_node, user_agent_node
+from src.graph.nodes import (
+    create_strategy_node,
+    format_questions_node,
+    supervisor_node,
+    user_agent_node,
+)
 from src.graph.prompts import set_config
 from src.graph.state import GraphState
 
@@ -18,7 +23,9 @@ def create_graph(config: AgentConfig | None = None):
 
     Flow:
     - Start with state="Question" → user_agent → formatter → END (formatter sets state="Answer")
-    - Start with state="Answer" → supervisor → END (supervisor sets state="Complete")
+    - Start with state="Answer" → check strategy_id:
+      - If no strategy_id → create_strategy → supervisor → END
+      - If strategy_id exists → supervisor → END (supervisor sets state="Complete")
 
     Args:
         config: Optional AgentConfig. If not provided, loads from environment variables.
@@ -33,6 +40,7 @@ def create_graph(config: AgentConfig | None = None):
     # Add nodes
     graph.add_node("user_agent", user_agent_node)
     graph.add_node("formatter", format_questions_node)
+    graph.add_node("create_strategy", create_strategy_node)
     graph.add_node("supervisor", supervisor_node)
 
     # Entry point routing based on state
@@ -40,15 +48,23 @@ def create_graph(config: AgentConfig | None = None):
         """Route at entry point based on state field.
 
         - "Question" or None → user_agent
-        - "Answer" → supervisor
+        - "Answer" → check strategy_id:
+          - If no strategy_id → create_strategy
+          - If strategy_id exists → supervisor
         - "Complete" → END
-        - "Error" → END (or error handling node if we add one)
+        - "Error" → END
         """
         current_state = state.get("state")
 
         if current_state == "Answer":
-            logger.info("State is Answer, routing to supervisor")
-            return "supervisor"
+            # Check if strategy_id is set
+            strategy_id = state.get("strategy_id")
+            if not strategy_id:
+                logger.info("State is Answer but no strategy_id, routing to create_strategy")
+                return "create_strategy"
+            else:
+                logger.info("State is Answer with strategy_id, routing to supervisor")
+                return "supervisor"
         elif current_state == "Complete":
             logger.info("State is Complete, routing to END")
             return END
@@ -65,6 +81,7 @@ def create_graph(config: AgentConfig | None = None):
         route_entry,
         {
             "user_agent": "user_agent",
+            "create_strategy": "create_strategy",
             "supervisor": "supervisor",
             END: END,
         },
@@ -75,6 +92,9 @@ def create_graph(config: AgentConfig | None = None):
 
     # formatter always goes to END (but sets state to "Answer" first)
     graph.add_edge("formatter", END)
+
+    # create_strategy always goes to supervisor
+    graph.add_edge("create_strategy", "supervisor")
 
     # supervisor always goes to END (but sets state to "Complete" first)
     graph.add_edge("supervisor", END)

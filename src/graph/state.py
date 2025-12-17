@@ -16,3 +16,4 @@ class GraphState(TypedDict, total=False):
     state: Literal["Question", "Answer", "Error", "Complete"]  # State machine state
     _user_agent_output: AIMessage  # Temporary storage for user agent output (not shown to user)
     formatted_questions: FormattedQuestions  # Structured questions parsed from formatter
+    strategy_id: str | None  # Strategy ID created by create_strategy node

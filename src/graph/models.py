@@ -43,3 +43,20 @@ class BuilderResult(BaseModel):
         default_factory=list,
         description="UUIDs of cards that were created during this operation",
     )
+
+
+class StrategyParams(BaseModel):
+    """Structured output for strategy creation parameters."""
+
+    name: str = Field(
+        ...,
+        description="A descriptive name for the trading strategy based on the user's request",
+    )
+    universe: list[str] = Field(
+        default_factory=list,
+        description="List of trading symbols (e.g., ['BTC-USD', 'ETH-USD']). Extract from the conversation if mentioned, otherwise leave empty.",
+    )
+    strategy_id: str = Field(
+        ...,
+        description="The UUID of the strategy that was created. This must be obtained by calling the create_strategy tool.",
+    )
