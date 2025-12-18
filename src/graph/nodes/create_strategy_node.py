@@ -1,6 +1,5 @@
 """Node for creating a strategy before supervisor processing."""
 
-import json
 import logging
 
 from src.graph.models import StrategyCreateInput
@@ -62,42 +61,19 @@ async def create_strategy_node(state: GraphState) -> GraphState:
     )
 
     # Extract strategy_id from tool result
-    # Tool result can be in different formats:
-    # 1. Direct object with strategy_id attribute
-    # 2. Dict with strategy_id key
-    # 3. List of content blocks (e.g., [{'type': 'text', 'text': '{"strategy_id": "..."}'}])
-    # 4. JSON string
-    strategy_id = None
+    # langchain-mcp-adapters 0.1.14 returns Pydantic models or dicts
+    if hasattr(tool_result, "model_dump"):
+        result_dict = tool_result.model_dump()
+    elif isinstance(tool_result, dict):
+        result_dict = tool_result
+    else:
+        logger.error(f"Unexpected tool result format: {type(tool_result)}, value: {tool_result}")
+        return {
+            "state": "Error",
+            "messages": messages,
+        }
 
-    # Handle list of content blocks (MCP format)
-    if isinstance(tool_result, list) and len(tool_result) > 0:
-        first_item = tool_result[0]
-        if isinstance(first_item, dict):
-            # Check if it's a content block with text field
-            if "text" in first_item:
-                text_content = first_item["text"]
-                try:
-                    tool_dict = json.loads(text_content) if isinstance(text_content, str) else text_content
-                    strategy_id = tool_dict.get("strategy_id")
-                except (json.JSONDecodeError, AttributeError):
-                    pass
-            # Or if it's a direct dict with strategy_id
-            elif "strategy_id" in first_item:
-                strategy_id = first_item.get("strategy_id")
-
-    # Handle direct object with strategy_id attribute
-    if not strategy_id and hasattr(tool_result, "strategy_id"):
-        strategy_id = tool_result.strategy_id
-    # Handle dict with strategy_id key
-    elif not strategy_id and isinstance(tool_result, dict):
-        strategy_id = tool_result.get("strategy_id")
-    # Handle JSON string
-    elif not strategy_id and isinstance(tool_result, str):
-        try:
-            tool_dict = json.loads(tool_result)
-            strategy_id = tool_dict.get("strategy_id")
-        except json.JSONDecodeError:
-            pass
+    strategy_id = result_dict.get("strategy_id")
 
     if not strategy_id:
         logger.error(f"Could not extract strategy_id from tool result: {tool_result}")

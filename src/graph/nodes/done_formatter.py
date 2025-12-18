@@ -125,15 +125,31 @@ async def done_formatter_node(state: GraphState) -> GraphState:
 
         # Get strategy details
         strategy_data = await get_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        strategy_dict = (
-            strategy_data if isinstance(strategy_data, dict) else strategy_data.model_dump()
-        )
+        if hasattr(strategy_data, "model_dump"):
+            strategy_dict = strategy_data.model_dump()
+        elif isinstance(strategy_data, dict):
+            strategy_dict = strategy_data
+        else:
+            logger.error(f"Unexpected strategy_data format: {type(strategy_data)}")
+            formatted_message = f"Strategy created successfully. Strategy ID: {strategy_id}"
+            return {
+                "messages": [AIMessage(content=formatted_message)],
+                "state": "Complete",
+            }
 
         # Compile strategy to get card details
         compile_result = await compile_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        compile_dict = (
-            compile_result if isinstance(compile_result, dict) else compile_result.model_dump()
-        )
+        if hasattr(compile_result, "model_dump"):
+            compile_dict = compile_result.model_dump()
+        elif isinstance(compile_result, dict):
+            compile_dict = compile_result
+        else:
+            logger.error(f"Unexpected compile_result format: {type(compile_result)}")
+            formatted_message = f"Strategy created successfully. Strategy ID: {strategy_id}"
+            return {
+                "messages": [AIMessage(content=formatted_message)],
+                "state": "Complete",
+            }
 
         # Generate UI summary using direct LLM call (no agent needed)
         ui_summary = await _generate_summary(strategy_id, strategy_dict, compile_dict)

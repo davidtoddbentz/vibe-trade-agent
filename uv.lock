@@ -2059,7 +2059,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "langchain", specifier = ">=0.3.0" },
     { name = "langchain-core", specifier = ">=0.3.64" },
-    { name = "langchain-mcp-adapters", specifier = ">=0.1.0" },
+    { name = "langchain-mcp-adapters", specifier = "==0.1.14" },
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.4.10" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.0" },
