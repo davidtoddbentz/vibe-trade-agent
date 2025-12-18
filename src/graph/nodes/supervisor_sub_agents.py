@@ -5,7 +5,6 @@ import logging
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.tools import ToolException
 
 from src.graph.models import BuilderResult
 from src.graph.prompts import (
@@ -22,6 +21,8 @@ async def _create_builder_agent():
     """Create the builder sub-agent using prompt from LangSmith.
 
     Builder has access to all MCP tools except compile_strategy and create_strategy.
+    The agent is configured to handle tool errors internally, allowing it to recover
+    from errors like ARCHETYPE_NOT_FOUND and retry with different approaches.
     """
     # Load prompt from LangSmith
     chain = await load_prompt("builder", include_model=True)
@@ -40,6 +41,8 @@ async def _create_builder_agent():
         logger.warning("No MCP tools loaded for builder agent.")
 
     # Create agent without structured output
+    # The agent's ReAct loop should handle tool errors internally and retry
+    # Tool errors like ARCHETYPE_NOT_FOUND should be seen by the agent and recovered from
     agent = create_agent(
         model,
         tools=builder_tools,
@@ -97,20 +100,12 @@ async def builder(request: str, strategy_id: str) -> str:
     # Use HumanMessage objects instead of dicts
 
     # Let the agent handle errors internally - it can retry on tool errors
-    # Catch ToolException to prevent graph crashes, but return it as a message
-    # so the supervisor can see what happened and potentially retry
+    # The agent's ReAct loop should see tool errors and be able to recover
+    # Only catch truly fatal system-level errors
     try:
         result = await agent.ainvoke({"messages": [HumanMessage(content=request_with_context)]})
-    except ToolException as e:
-        # Tool errors should be recoverable - return as BuilderResult so supervisor can retry
-        logger.warning(f"Builder agent encountered tool error: {e}")
-        error_result = BuilderResult(
-            status="in_progress",  # Agent can retry with different approach
-            message=f"Tool error encountered: {str(e)}. The agent should browse available archetypes first before using get_schema_example.",
-        )
-        return error_result.model_dump_json()
     except (KeyboardInterrupt, SystemExit, RuntimeError) as e:
-        # Only catch fatal framework errors
+        # Only catch fatal framework errors - tool errors should be handled by agent internally
         logger.error(f"Builder agent framework error: {e}")
         error_result = BuilderResult(
             status="impossible",
