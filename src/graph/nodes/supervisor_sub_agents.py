@@ -5,6 +5,7 @@ import logging
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import ToolException
 
 from src.graph.models import BuilderResult
 from src.graph.prompts import (
@@ -96,11 +97,20 @@ async def builder(request: str, strategy_id: str) -> str:
     # Use HumanMessage objects instead of dicts
 
     # Let the agent handle errors internally - it can retry on tool errors
-    # Only catch truly fatal exceptions (agent framework failures)
+    # Catch ToolException to prevent graph crashes, but return it as a message
+    # so the supervisor can see what happened and potentially retry
     try:
         result = await agent.ainvoke({"messages": [HumanMessage(content=request_with_context)]})
+    except ToolException as e:
+        # Tool errors should be recoverable - return as BuilderResult so supervisor can retry
+        logger.warning(f"Builder agent encountered tool error: {e}")
+        error_result = BuilderResult(
+            status="in_progress",  # Agent can retry with different approach
+            message=f"Tool error encountered: {str(e)}. The agent should browse available archetypes first before using get_schema_example.",
+        )
+        return error_result.model_dump_json()
     except (KeyboardInterrupt, SystemExit, RuntimeError) as e:
-        # Only catch fatal framework errors, not tool errors
+        # Only catch fatal framework errors
         logger.error(f"Builder agent framework error: {e}")
         error_result = BuilderResult(
             status="impossible",
