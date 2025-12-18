@@ -38,7 +38,9 @@ async def create_strategy_node(state: GraphState) -> GraphState:
     structured_llm = model.with_structured_output(StrategyCreateInput)
     strategy_input: StrategyCreateInput = await structured_llm.ainvoke(formatted_messages)
 
-    logger.info(f"Generated strategy params: name={strategy_input.name}, universe={strategy_input.universe}")
+    logger.info(
+        f"Generated strategy params: name={strategy_input.name}, universe={strategy_input.universe}"
+    )
 
     # Call the MCP tool directly
     tools = await get_mcp_tools(allowed_tools=["create_strategy"])

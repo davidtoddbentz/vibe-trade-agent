@@ -29,7 +29,11 @@ async def _create_builder_agent():
 
     # Load all MCP tools except compile_strategy and create_strategy
     all_tools = await get_mcp_tools()
-    builder_tools = [t for t in all_tools if t.name not in ["compile_strategy", "validate_strategy", "create_strategy"]]
+    builder_tools = [
+        t
+        for t in all_tools
+        if t.name not in ["compile_strategy", "validate_strategy", "create_strategy"]
+    ]
 
     if not builder_tools:
         logger.warning("No MCP tools loaded for builder agent.")
@@ -147,6 +151,7 @@ def create_builder_tool(strategy_id: str):
     Returns:
         A tool that only requires the conversation_context parameter (strategy_id is captured in closure).
     """
+
     # Create a wrapper function that captures strategy_id in closure
     async def builder_with_strategy(conversation_context: str) -> str:
         """Build trading strategy components based on conversational context.
@@ -165,6 +170,7 @@ def create_builder_tool(strategy_id: str):
 
     # Create a tool from the wrapper function
     from langchain.tools import tool
+
     return tool(builder_with_strategy)
 
 
@@ -243,6 +249,7 @@ def create_verify_tool(strategy_id: str):
     Returns:
         A tool that only requires the user_request parameter (strategy_id is captured in closure).
     """
+
     # Create a wrapper function that captures strategy_id in closure
     async def verify_with_strategy(user_request: str) -> str:
         """Verify and compile trading strategies using natural language.
@@ -268,4 +275,5 @@ def create_verify_tool(strategy_id: str):
 
     # Create a tool from the wrapper function
     from langchain.tools import tool
+
     return tool(verify_with_strategy)

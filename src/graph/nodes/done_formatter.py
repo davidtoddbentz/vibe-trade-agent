@@ -13,7 +13,9 @@ from src.graph.tools.mcp_tools import get_mcp_tools
 logger = logging.getLogger(__name__)
 
 
-async def _generate_summary(strategy_id: str, strategy_dict: dict, compile_dict: dict) -> StrategyUISummary | None:
+async def _generate_summary(
+    strategy_id: str, strategy_dict: dict, compile_dict: dict
+) -> StrategyUISummary | None:
     """Generate Strategy UI Summary using LLM with structured output.
 
     Uses the model directly from config - no prompt template needed since we construct
@@ -30,6 +32,7 @@ async def _generate_summary(strategy_id: str, strategy_dict: dict, compile_dict:
     try:
         # Get model from environment (no need for LangSmith prompt)
         import os
+
         model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         model = ChatOpenAI(model=model_name, temperature=0.7)
 
@@ -48,10 +51,10 @@ Analyze the strategy cards and configurations to determine the appropriate motif
             content=f"""Generate a Strategy UI Summary for the following strategy:
 
 Strategy ID: {strategy_id}
-Strategy Name: {strategy_dict.get('name', 'Unknown')}
-Status: {strategy_dict.get('status', 'unknown')}
-Universe: {', '.join(strategy_dict.get('universe', []))}
-Version: {strategy_dict.get('version', 1)}
+Strategy Name: {strategy_dict.get("name", "Unknown")}
+Status: {strategy_dict.get("status", "unknown")}
+Universe: {", ".join(strategy_dict.get("universe", []))}
+Version: {strategy_dict.get("version", 1)}
 
 Strategy Details:
 {json.dumps(strategy_dict, indent=2)}
@@ -122,11 +125,15 @@ async def done_formatter_node(state: GraphState) -> GraphState:
 
         # Get strategy details
         strategy_data = await get_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        strategy_dict = strategy_data if isinstance(strategy_data, dict) else strategy_data.model_dump()
+        strategy_dict = (
+            strategy_data if isinstance(strategy_data, dict) else strategy_data.model_dump()
+        )
 
         # Compile strategy to get card details
         compile_result = await compile_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        compile_dict = compile_result if isinstance(compile_result, dict) else compile_result.model_dump()
+        compile_dict = (
+            compile_result if isinstance(compile_result, dict) else compile_result.model_dump()
+        )
 
         # Generate UI summary using direct LLM call (no agent needed)
         ui_summary = await _generate_summary(strategy_id, strategy_dict, compile_dict)
@@ -156,4 +163,3 @@ async def done_formatter_node(state: GraphState) -> GraphState:
             "messages": [AIMessage(content=formatted_message)],
             "state": "Complete",
         }
-
