@@ -3,8 +3,10 @@
 import logging
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
 from langchain.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import ToolException
 
 from src.graph.models import BuilderResult
 from src.graph.prompts import (
@@ -15,6 +17,35 @@ from src.graph.prompts import (
 from src.graph.tools.mcp_tools import get_mcp_tools
 
 logger = logging.getLogger(__name__)
+
+
+@wrap_tool_call
+async def handle_tool_errors(request, handler):
+    """Handle tool execution errors and return them as ToolMessage so agent can see and handle them.
+
+    Uses the existing StructuredToolError formatting which already includes
+    error_code and recovery_hint in the error message. This allows the agent
+    to see tool errors in its ReAct loop and decide whether to retry or handle them.
+    """
+    try:
+        return await handler(request)
+    except ToolException as e:
+        # ToolException from langchain-mcp-adapters may wrap StructuredToolError
+        # The error message already includes structured info (error_code, recovery_hint)
+        # because StructuredToolError.__str__() formats it that way
+        error_msg = str(e)
+
+        # Return error as ToolMessage so agent can see it and decide what to do
+        return ToolMessage(
+            content=f"Tool error: {error_msg}",
+            tool_call_id=request.tool_call["id"],
+        )
+    except Exception as e:
+        # Catch other exceptions too
+        return ToolMessage(
+            content=f"Tool error: {str(e)}",
+            tool_call_id=request.tool_call["id"],
+        )
 
 
 async def _create_builder_agent():
@@ -40,13 +71,15 @@ async def _create_builder_agent():
     if not builder_tools:
         logger.warning("No MCP tools loaded for builder agent.")
 
-    # Create agent without structured output
-    # The agent's ReAct loop should handle tool errors internally and retry
-    # Tool errors like ARCHETYPE_NOT_FOUND should be seen by the agent and recovered from
+    # Create agent with tool error handling middleware
+    # This allows the agent to see tool errors in its ReAct loop and decide what to do
+    # Tool errors like ARCHETYPE_NOT_FOUND will be returned as ToolMessage with
+    # error_code and recovery_hint, allowing the agent to retry or handle them
     agent = create_agent(
         model,
         tools=builder_tools,
         system_prompt=system_prompt,
+        middleware=[handle_tool_errors],
     )
     return agent
 
@@ -75,7 +108,10 @@ async def _create_verify_agent():
     if not verify_tools:
         logger.warning("No MCP tools loaded for verify agent.")
 
-    agent = create_agent(model, tools=verify_tools, system_prompt=system_prompt)
+    # Create agent with tool error handling middleware for consistency
+    agent = create_agent(
+        model, tools=verify_tools, system_prompt=system_prompt, middleware=[handle_tool_errors]
+    )
     return agent
 
 
@@ -223,8 +259,10 @@ async def verify(user_request: str, strategy_id: str) -> str:
     if not verify_tools:
         logger.warning("No MCP tools loaded for verify agent.")
 
-    # Create agent with prompt from LangSmith
-    agent = create_agent(model, tools=verify_tools, system_prompt=system_prompt)
+    # Create agent with prompt from LangSmith and tool error handling middleware
+    agent = create_agent(
+        model, tools=verify_tools, system_prompt=system_prompt, middleware=[handle_tool_errors]
+    )
 
     # Format the prompt template with required parameters
     # The verify prompt should have {user_request} and {strategy_id} placeholders
