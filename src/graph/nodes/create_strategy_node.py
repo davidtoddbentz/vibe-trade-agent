@@ -5,7 +5,7 @@ import logging
 from src.graph.models import StrategyCreateInput
 from src.graph.prompts import extract_prompt_and_model, load_prompt
 from src.graph.state import GraphState
-from src.graph.tools.mcp_tools import get_mcp_tools
+from src.graph.tools.mcp_tools import extract_mcp_tool_result, get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -60,23 +60,24 @@ async def create_strategy_node(state: GraphState) -> GraphState:
         }
     )
 
-    # Extract strategy_id from tool result
-    # langchain-mcp-adapters 0.1.14 returns Pydantic models or dicts
-    if hasattr(tool_result, "model_dump"):
-        result_dict = tool_result.model_dump()
-    elif isinstance(tool_result, dict):
-        result_dict = tool_result
-    else:
-        logger.error(f"Unexpected tool result format: {type(tool_result)}, value: {tool_result}")
+    # Extract result - MCP server returns CreateStrategyResponse (Pydantic model)
+    # but langchain-mcp-adapters may serialize it in different formats
+    try:
+        result_dict = extract_mcp_tool_result(tool_result)
+    except ValueError as e:
+        logger.error(f"Failed to extract tool result: {e}")
         return {
             "state": "Error",
             "messages": messages,
         }
 
+    # Extract strategy_id - CreateStrategyResponse has strategy_id field
     strategy_id = result_dict.get("strategy_id")
 
     if not strategy_id:
-        logger.error(f"Could not extract strategy_id from tool result: {tool_result}")
+        logger.error(
+            f"Could not extract strategy_id from result_dict. Keys: {list(result_dict.keys()) if result_dict else 'None'}, full result: {str(result_dict)[:500]}"
+        )
         return {
             "state": "Error",
             "messages": messages,

@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 
 from src.graph.models import StrategyUISummary
 from src.graph.state import GraphState
-from src.graph.tools.mcp_tools import get_mcp_tools
+from src.graph.tools.mcp_tools import extract_mcp_tool_result, get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -123,28 +123,24 @@ async def done_formatter_node(state: GraphState) -> GraphState:
                 "state": "Complete",
             }
 
-        # Get strategy details
+        # Get strategy details - MCP server returns GetStrategyResponse (Pydantic model)
         strategy_data = await get_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        if hasattr(strategy_data, "model_dump"):
-            strategy_dict = strategy_data.model_dump()
-        elif isinstance(strategy_data, dict):
-            strategy_dict = strategy_data
-        else:
-            logger.error(f"Unexpected strategy_data format: {type(strategy_data)}")
+        try:
+            strategy_dict = extract_mcp_tool_result(strategy_data)
+        except ValueError as e:
+            logger.error(f"Failed to extract strategy data: {e}")
             formatted_message = f"Strategy created successfully. Strategy ID: {strategy_id}"
             return {
                 "messages": [AIMessage(content=formatted_message)],
                 "state": "Complete",
             }
 
-        # Compile strategy to get card details
+        # Compile strategy to get card details - MCP server returns CompileStrategyResponse (Pydantic model)
         compile_result = await compile_strategy_tool.ainvoke({"strategy_id": strategy_id})
-        if hasattr(compile_result, "model_dump"):
-            compile_dict = compile_result.model_dump()
-        elif isinstance(compile_result, dict):
-            compile_dict = compile_result
-        else:
-            logger.error(f"Unexpected compile_result format: {type(compile_result)}")
+        try:
+            compile_dict = extract_mcp_tool_result(compile_result)
+        except ValueError as e:
+            logger.error(f"Failed to extract compile result: {e}")
             formatted_message = f"Strategy created successfully. Strategy ID: {strategy_id}"
             return {
                 "messages": [AIMessage(content=formatted_message)],

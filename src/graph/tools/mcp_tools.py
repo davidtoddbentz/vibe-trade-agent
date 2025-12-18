@@ -12,7 +12,9 @@ The MCP server (vibe-trade-mcp) provides the following tools:
 See: ../vibe-trade-mcp/README.md for more details.
 """
 
+import json
 import logging
+from typing import Any
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.sessions import StreamableHttpConnection
@@ -21,6 +23,56 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from src.graph.config import AgentConfig
 
 logger = logging.getLogger(__name__)
+
+
+def extract_mcp_tool_result(tool_result: Any) -> dict[str, Any]:
+    """Extract dict from MCP tool result.
+
+    The MCP server (vibe-trade-mcp) consistently returns Pydantic models.
+    However, langchain-mcp-adapters inconsistently deserializes them:
+    - Sometimes returns the Pydantic model directly (expected)
+    - Sometimes returns a dict (expected after parsing)
+    - Sometimes returns a JSON string (adapter bug/limitation)
+    - Sometimes returns content blocks (adapter protocol format)
+
+    This function normalizes all formats to a dict for consistent handling.
+
+    Args:
+        tool_result: Raw result from tool.ainvoke()
+
+    Returns:
+        dict: Parsed result as a dictionary
+
+    Raises:
+        ValueError: If the result cannot be parsed into a dict
+    """
+    # Pydantic models (expected from MCP server)
+    if hasattr(tool_result, "model_dump"):
+        return tool_result.model_dump()
+
+    # Dicts (already parsed)
+    if isinstance(tool_result, dict):
+        return tool_result
+
+    # JSON strings (adapter serialization quirk)
+    if isinstance(tool_result, str):
+        try:
+            return json.loads(tool_result)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Tool result is a string but not valid JSON: {e}") from e
+
+    # List of content blocks (adapter protocol format)
+    if isinstance(tool_result, list) and len(tool_result) > 0:
+        first_item = tool_result[0]
+        if isinstance(first_item, dict) and "text" in first_item:
+            try:
+                return json.loads(first_item["text"])
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Tool result content block contains invalid JSON: {e}") from e
+
+    raise ValueError(
+        f"Unexpected tool result format: {type(tool_result)}, value: {str(tool_result)[:500]}"
+    )
 
 
 async def get_mcp_tools(

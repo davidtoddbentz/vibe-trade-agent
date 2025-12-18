@@ -161,5 +161,9 @@ async def supervisor_node(state: GraphState) -> GraphState:
         }
     )
 
+    # Preserve strategy_id in the result (agent result might not include it)
     # Don't update state here - let finalize node handle it
-    return result
+    return {
+        **result,
+        "strategy_id": strategy_id,  # Preserve strategy_id from state
+    }

@@ -12,7 +12,7 @@ dependencies = [
     "langgraph-cli[inmem]>=0.4.0",
     "mcp>=1.0.0",
     "httpx>=0.25.0",
-    "langchain-mcp-adapters==0.1.14",
+    "langchain-mcp-adapters>=0.2.1",
 ]
 
 [build-system]
