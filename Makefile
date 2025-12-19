@@ -1,9 +1,13 @@
-.PHONY: install run test lint format format-check check clean \
+.PHONY: install locally run test lint format format-check check clean \
 	docker-build docker-push docker-build-push deploy deploy-image force-revision
 
 # Install dependencies
 install:
 	uv sync --all-groups
+
+# Setup for local development: install deps, fix linting, and format code
+locally: install lint-fix format
+	@echo "✅ Local setup complete!"
 
 # Run the LangGraph agent server
 run:

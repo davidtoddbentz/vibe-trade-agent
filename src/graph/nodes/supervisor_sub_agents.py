@@ -20,17 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 @wrap_tool_call
-def handle_tool_errors(request, handler):
+async def handle_tool_errors(request, handler):
     """Handle tool execution errors and return them as ToolMessage so agent can see and handle them.
 
     Uses the existing StructuredToolError formatting which already includes
     error_code and recovery_hint in the error message. This allows the agent
     to see tool errors in its ReAct loop and decide whether to retry or handle them.
 
-    The handler may be async, but wrap_tool_call handles this automatically.
+    This is an async function to support async agent invocations (ainvoke/astream).
     """
     try:
-        return handler(request)
+        # Handler is async when used with async agents (ainvoke/astream)
+        return await handler(request)
     except ToolException as e:
         # ToolException from langchain-mcp-adapters may wrap StructuredToolError
         # The error message already includes structured info (error_code, recovery_hint)

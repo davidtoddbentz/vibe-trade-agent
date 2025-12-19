@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 from src.graph.config import AgentConfig
 from src.graph.nodes import (
     create_strategy_node,
+    done_formatter_node,
     format_questions_node,
     supervisor_node,
     user_agent_node,
@@ -24,8 +25,9 @@ def create_graph(config: AgentConfig | None = None):
     Flow:
     - Start with state="Question" → user_agent → formatter → END (formatter sets state="Answer")
     - Start with state="Answer" → check strategy_id:
-      - If no strategy_id → create_strategy → supervisor → END
-      - If strategy_id exists → supervisor → END (supervisor sets state="Complete")
+      - If no strategy_id → create_strategy → supervisor → done_formatter → END
+      - If strategy_id exists → supervisor → done_formatter → END
+    - Start with state="Complete" → END (workflow already complete)
 
     Args:
         config: Optional AgentConfig. If not provided, loads from environment variables.
@@ -42,6 +44,7 @@ def create_graph(config: AgentConfig | None = None):
     graph.add_node("formatter", format_questions_node)
     graph.add_node("create_strategy", create_strategy_node)
     graph.add_node("supervisor", supervisor_node)
+    graph.add_node("done_formatter", done_formatter_node)
 
     # Entry point routing based on state
     def route_entry(state: GraphState) -> str:
@@ -51,7 +54,7 @@ def create_graph(config: AgentConfig | None = None):
         - "Answer" → check strategy_id:
           - If no strategy_id → create_strategy
           - If strategy_id exists → supervisor
-        - "Complete" → END
+        - "Complete" → END (workflow already complete)
         - "Error" → END
         """
         current_state = state.get("state")
@@ -66,6 +69,7 @@ def create_graph(config: AgentConfig | None = None):
                 logger.info("State is Answer with strategy_id, routing to supervisor")
                 return "supervisor"
         elif current_state == "Complete":
+            # Workflow is already complete, don't re-enter
             logger.info("State is Complete, routing to END")
             return END
         elif current_state == "Error":
@@ -96,8 +100,11 @@ def create_graph(config: AgentConfig | None = None):
     # create_strategy always goes to supervisor
     graph.add_edge("create_strategy", "supervisor")
 
-    # supervisor always goes to END (but sets state to "Complete" first)
-    graph.add_edge("supervisor", END)
+    # supervisor always goes to done_formatter
+    graph.add_edge("supervisor", "done_formatter")
+
+    # done_formatter always goes to END (sets state to "Complete")
+    graph.add_edge("done_formatter", END)
 
     return graph.compile()
 

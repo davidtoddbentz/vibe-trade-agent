@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from src.graph.models import FormattedQuestions
+from src.graph.models import FormattedQuestions, StrategyUISummary
 
 
 class GraphState(TypedDict, total=False):
@@ -17,3 +17,4 @@ class GraphState(TypedDict, total=False):
     _user_agent_output: AIMessage  # Temporary storage for user agent output (not shown to user)
     formatted_questions: FormattedQuestions  # Structured questions parsed from formatter
     strategy_id: str | None  # Strategy ID created by create_strategy node
+    strategy_ui_summary: StrategyUISummary | None  # UI summary for strategy display
