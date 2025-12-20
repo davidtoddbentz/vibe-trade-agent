@@ -11,7 +11,6 @@ from src.graph.config import AgentConfig
 from src.graph.models import StrategyUISummary
 from src.graph.prompts import extract_prompt_and_model, load_prompt
 from src.graph.state import GraphState
-from src.graph.tools.mcp_tools import extract_mcp_tool_result, get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -98,41 +97,17 @@ async def _fetch_strategy_data_api(strategy_id: str, config: AgentConfig) -> dic
         return response.json()
 
 
-async def _fetch_compiled_data(strategy_id: str) -> dict:
-    """Fetch compiled strategy data using MCP tool (needed for timeframe and sizing).
+def _extract_basic_info(api_data: dict) -> dict:
+    """Extract basic strategy information deterministically from API data.
 
     Args:
-        strategy_id: Strategy identifier
-
-    Returns:
-        Compiled strategy dictionary
-
-    Raises:
-        ValueError: If tool is not available or data extraction fails
-    """
-    tools = await get_mcp_tools(allowed_tools=["compile_strategy"])
-    compile_strategy_tool = next((t for t in tools if t.name == "compile_strategy"), None)
-
-    if not compile_strategy_tool:
-        raise ValueError("compile_strategy tool not available")
-
-    compile_result = await compile_strategy_tool.ainvoke({"strategy_id": strategy_id})
-    return extract_mcp_tool_result(compile_result)
-
-
-def _extract_basic_info(api_data: dict, compile_data: dict) -> dict:
-    """Extract basic strategy information deterministically.
-
-    Args:
-        api_data: API response with strategy and cards
-        compile_data: Compiled strategy data (may have compiled=None if not ready)
+        api_data: API response with strategy and cards (includes slots)
 
     Returns:
         Dictionary with asset, amount, timeframe, direction
     """
     strategy = api_data.get("strategy", {})
     cards = api_data.get("cards", [])
-    compiled = compile_data.get("compiled")  # Can be None if strategy not ready
 
     # Extract asset from universe
     asset = None
@@ -140,31 +115,29 @@ def _extract_basic_info(api_data: dict, compile_data: dict) -> dict:
     if universe:
         asset = universe[0]
 
-    # Extract timeframe from data_requirements (only if compiled is available)
+    # Extract timeframe from card slots (context.tf)
     timeframe = None
-    if compiled:
-        data_requirements = compiled.get("data_requirements", [])
-        if data_requirements:
-            timeframe = data_requirements[0].get("timeframe")
+    for card in cards:
+        slots = card.get("slots", {})
+        context = slots.get("context", {})
+        if "tf" in context:
+            timeframe = context["tf"]
+            break  # Use first timeframe found
 
-    # Extract amount from sizing_spec in compiled cards (only if compiled is available)
+    # Extract amount from card slots (action.sizing)
     amount = None
-    if compiled:
-        compiled_cards = compiled.get("cards", [])
-        for card in compiled_cards:
-            sizing_spec = card.get("sizing_spec")
-            if sizing_spec:
-                # Try different possible fields for amount
-                amount = (
-                    sizing_spec.get("amount")
-                    or sizing_spec.get("quantity")
-                    or sizing_spec.get("size")
-                )
-                if amount:
-                    # Format as string if it's a number
-                    if isinstance(amount, (int, float)):
-                        amount = str(amount)
-                    break
+    for card in cards:
+        slots = card.get("slots", {})
+        action = slots.get("action", {})
+        sizing = action.get("sizing", {})
+        if sizing:
+            # Try different possible fields for amount
+            amount = sizing.get("amount") or sizing.get("quantity") or sizing.get("size")
+            if amount:
+                # Format as string if it's a number
+                if isinstance(amount, (int, float)):
+                    amount = str(amount)
+                break
 
     # Determine direction from card roles and types
     direction: Literal["long", "short", "both"] | None = None
@@ -263,11 +236,10 @@ async def done_formatter_node(state: GraphState) -> GraphState:
 
     This node:
     1. Gets strategy_id from state
-    2. Fetches strategy data via direct HTTP API call
-    3. Fetches compiled data for timeframe/sizing info
-    4. Extracts basic info deterministically (asset, amount, timeframe, direction)
-    5. Uses LLM to map archetype types to UI archetype identifiers
-    6. Combines everything into StrategyUISummary
+    2. Fetches strategy data via direct HTTP API call (includes cards with slots)
+    3. Extracts basic info deterministically from card slots (asset, amount, timeframe, direction)
+    4. Uses LLM to map archetype types to UI archetype identifiers
+    5. Combines everything into StrategyUISummary
 
     Args:
         state: Current graph state
@@ -301,19 +273,8 @@ async def done_formatter_node(state: GraphState) -> GraphState:
             "state": "Complete",
         }
 
-    # Fetch compiled data for timeframe and sizing
-    try:
-        compile_data = await _fetch_compiled_data(strategy_id)
-    except ValueError as e:
-        logger.error(f"Failed to fetch compiled data: {e}")
-        formatted_message = f"Strategy created successfully. Strategy ID: {strategy_id}"
-        return {
-            "messages": [AIMessage(content=formatted_message)],
-            "state": "Complete",
-        }
-
-    # Extract basic info deterministically
-    basic_info = _extract_basic_info(api_data, compile_data)
+    # Extract basic info deterministically from API data (no compilation needed)
+    basic_info = _extract_basic_info(api_data)
 
     # Extract archetype types from cards
     cards = api_data.get("cards", [])
@@ -321,7 +282,6 @@ async def done_formatter_node(state: GraphState) -> GraphState:
 
     # Extract strategy info for prompt
     strategy = api_data.get("strategy", {})
-    compiled = compile_data.get("compiled") if compile_data else None
 
     # Map archetypes to UI using LLM
     ui_potentials = await _map_archetypes_to_ui(
@@ -332,7 +292,7 @@ async def done_formatter_node(state: GraphState) -> GraphState:
         strategy_status=strategy.get("status", "draft"),
         strategy_version=strategy.get("version"),
         strategy_details=strategy,
-        compile_details=compiled,
+        compile_details=None,  # No longer needed - we extract from slots directly
     )
 
     # Combine into StrategyUISummary
