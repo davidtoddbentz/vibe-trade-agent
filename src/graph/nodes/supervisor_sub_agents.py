@@ -134,33 +134,24 @@ def _create_bound_tool(tool_func, param_name: str, strategy_id: str):
     else:
         docstring = f"Tool with strategy_id automatically provided.\n\nArgs:\n    {param_name}: The request parameter.\n\nReturns:\n    Tool result."
     
-    # Create the bound function with proper name and docstring
-    async def bound_tool_func(request: str) -> str:
-        """Bound tool wrapper - strategy_id is automatically provided."""
-        # tool_func is a StructuredTool created with @tool decorator
-        # Access the underlying async function and call it directly with bound parameters
-        # This avoids issues with ainvoke() format expectations
-        if hasattr(tool_func, "func"):
-            # Get the underlying function from the StructuredTool
-            underlying_func = tool_func.func
-            # Call it directly with the parameters
-            result = await underlying_func(**{param_name: request, "strategy_id": strategy_id})
-        else:
-            # Fallback: use ainvoke if func not available
-            result = await tool_func.ainvoke({param_name: request, "strategy_id": strategy_id})
-        return result
+    # Create the bound function - use ainvoke() like the original implementation
+    async def bound_tool(request: str) -> str:
+        return await tool_func.ainvoke({param_name: request, "strategy_id": strategy_id})
     
-    # Set name and docstring before creating tool
-    bound_tool_func.__name__ = tool_name
-    bound_tool_func.__doc__ = docstring
+    # Set name and docstring before wrapping with tool()
+    bound_tool.__name__ = tool_name
+    bound_tool.__doc__ = docstring
     
-    # Use StructuredTool.from_function which properly handles async functions
-    # and accepts name and description parameters
-    return StructuredTool.from_function(
-        func=bound_tool_func,
-        name=tool_name,
-        description=docstring,
-    )
+    # Use tool() decorator like the original - it properly handles async functions
+    # Create the tool and then update its name and description
+    created_tool = tool(bound_tool)
+    # Update name and description if the tool supports it
+    if hasattr(created_tool, "name"):
+        created_tool.name = tool_name
+    if hasattr(created_tool, "description"):
+        created_tool.description = docstring
+    
+    return created_tool
 
 
 def create_builder_tool(strategy_id: str):
