@@ -154,12 +154,13 @@ def _create_bound_tool(tool_func, param_name: str, strategy_id: str):
     bound_tool_func.__name__ = tool_name
     bound_tool_func.__doc__ = docstring
     
-    # Use @tool decorator which properly handles async functions
-    # This ensures the tool is correctly wrapped and can be invoked by the agent
-    return tool(
+    # Use StructuredTool.from_function which properly handles async functions
+    # and accepts name and description parameters
+    return StructuredTool.from_function(
+        func=bound_tool_func,
         name=tool_name,
         description=docstring,
-    )(bound_tool_func)
+    )
 
 
 def create_builder_tool(strategy_id: str):
