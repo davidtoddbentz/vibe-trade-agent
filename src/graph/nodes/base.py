@@ -61,7 +61,9 @@ async def create_agent_from_config(config: AgentConfig):
         tools.extend(config.custom_tools)
 
     # Load MCP tools
-    if config.tools or config.excluded_tools:
+    # If tools is None and excluded_tools is set, load all tools and filter
+    # If tools is set, only load those specific tools
+    if config.tools is not None or config.excluded_tools:
         mcp_tools = await get_mcp_tools(allowed_tools=config.tools)
 
         # Filter out excluded tools
@@ -72,6 +74,8 @@ async def create_agent_from_config(config: AgentConfig):
 
     if not tools and not config.custom_tools:
         logger.warning(f"No tools loaded for agent '{config.prompt_name}'")
+    else:
+        logger.info(f"Loaded {len(tools)} tools for agent '{config.prompt_name}'")
 
     # Create agent
     agent_kwargs = {

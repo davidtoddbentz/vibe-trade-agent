@@ -75,7 +75,15 @@ async def _invoke_sub_agent(
     request_with_context = f"Strategy ID: {strategy_id}\n\n{request}"
     
     try:
-        return await agent.ainvoke({"messages": [HumanMessage(content=request_with_context)]})
+        result = await agent.ainvoke({"messages": [HumanMessage(content=request_with_context)]})
+        # Log the result to help debug ReAct loop completion
+        messages = result.get("messages", [])
+        tool_calls = [msg for msg in messages if hasattr(msg, "tool_calls") and msg.tool_calls]
+        logger.info(
+            f"{prompt_name} agent completed with {len(messages)} messages, "
+            f"{len(tool_calls)} tool calls"
+        )
+        return result
     except (KeyboardInterrupt, SystemExit, RuntimeError) as e:
         logger.error(f"{prompt_name} agent framework error: {e}")
         raise
