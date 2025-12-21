@@ -2,40 +2,11 @@
 
 import logging
 
-from langchain.agents import create_agent
-
 from src.graph.models import FormattedQuestions
-from src.graph.prompts import (
-    extract_prompt_and_model,
-    extract_system_prompt,
-    load_prompt,
-)
+from src.graph.nodes.base import AgentConfig, invoke_agent_node
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
-
-
-async def _create_formatter_agent():
-    """Create the formatter agent using prompt from LangSmith with structured output."""
-    # Load prompt from LangSmith (includes model configuration)
-    # Returns a RunnableSequence (prompt | model) when include_model=True
-    chain = await load_prompt("formatter", include_model=True)
-
-    # Extract model and prompt from RunnableSequence
-    prompt_template, model = extract_prompt_and_model(chain)
-
-    # Extract system prompt from ChatPromptTemplate
-    system_prompt = extract_system_prompt(prompt_template)
-
-    # Create agent with structured output - no tools needed
-    agent = create_agent(
-        model,
-        tools=[],
-        system_prompt=system_prompt,
-        response_format=FormattedQuestions,  # Structured output schema
-    )
-
-    return agent
 
 
 async def format_questions_node(state: GraphState) -> GraphState:
@@ -51,27 +22,31 @@ async def format_questions_node(state: GraphState) -> GraphState:
         logger.warning("No user agent output found to parse")
         return state
 
-    # Create formatter agent fresh on each invocation
-    agent = await _create_formatter_agent()
-
-    # Invoke agent with the user agent's output in context
-    # The agent will format it into structured questions
-    result = await agent.ainvoke(
-        {
+    def input_transformer(state: GraphState) -> dict:
+        """Transform state to include only the user agent's message."""
+        return {
             **state,
-            "messages": [agent_message],  # Pass the agent message as context
+            "messages": [agent_message],
         }
+
+    def output_transformer(original_state: GraphState, result: dict) -> GraphState:
+        """Extract structured response and update state."""
+        formatted_questions = None
+        if "structured_response" in result:
+            formatted_questions = result["structured_response"]
+
+        return {
+            "formatted_questions": formatted_questions,
+            "_user_agent_output": None,  # Clear the temporary storage
+            "state": "Answer",  # Set state to Answer so next entry routes to supervisor
+        }
+
+    config = AgentConfig(
+        prompt_name="formatter",
+        tools=[],
+        response_format=FormattedQuestions,
     )
 
-    # Extract structured response
-    formatted_questions = None
-    if "structured_response" in result:
-        formatted_questions = result["structured_response"]
-        logger.debug(f"Formatted questions: {formatted_questions}")
-
-    # Store structured questions, clear temp storage, and set state to "Answer" before END
-    return {
-        "formatted_questions": formatted_questions,
-        "_user_agent_output": None,  # Clear the temporary storage
-        "state": "Answer",  # Set state to Answer so next entry routes to supervisor
-    }
+    return await invoke_agent_node(
+        state, config, input_transformer=input_transformer, output_transformer=output_transformer
+    )

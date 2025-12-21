@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from src.graph.config import AgentConfig
 from src.graph.models import StrategyUISummary
-from src.graph.prompts import extract_prompt_and_model, load_prompt
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -200,9 +199,12 @@ async def _map_archetypes_to_ui(
         return []
 
     try:
-        # Load prompt and model from LangSmith
-        chain = await load_prompt("ui_summary", include_model=True)
-        prompt_template, model = extract_prompt_and_model(chain)
+        from src.graph.nodes.base import create_llm_with_prompt
+
+        # Create LLM with structured output
+        prompt_template, structured_llm = await create_llm_with_prompt(
+            "ui_summary", UIArchetypesResponse
+        )
 
         # Format prompt with all required variables
         formatted_messages = await prompt_template.ainvoke(
@@ -220,8 +222,7 @@ async def _map_archetypes_to_ui(
         if hasattr(formatted_messages, "to_messages"):
             formatted_messages = formatted_messages.to_messages()
 
-        # Use LLM with structured output - only return ui_potentials
-        structured_llm = model.with_structured_output(UIArchetypesResponse)
+        # Invoke LLM
         result = await structured_llm.ainvoke(formatted_messages)
 
         return result.ui_potentials

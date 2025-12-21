@@ -2,17 +2,12 @@
 
 import logging
 
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
+from src.graph.nodes.base import AgentConfig, invoke_agent_node, validate_state
 from src.graph.nodes.supervisor_sub_agents import (
     create_builder_tool,
     create_verify_tool,
-)
-from src.graph.prompts import (
-    extract_prompt_and_model,
-    extract_system_prompt,
-    load_prompt,
 )
 from src.graph.state import GraphState
 
@@ -29,8 +24,6 @@ def _construct_user_request(state: GraphState) -> str:
     - User responses (HumanMessages after questions)
     - All conversation messages (AI and Human)
     """
-    from langchain_core.messages import AIMessage
-
     parts = []
 
     # Get initial user prompt (first HumanMessage)
@@ -88,36 +81,6 @@ def _construct_user_request(state: GraphState) -> str:
     return "\n".join(parts)
 
 
-async def _create_supervisor_agent(strategy_id: str):
-    """Create the supervisor agent using prompt from LangSmith.
-
-    The supervisor coordinates builder and verify sub-agents using the supervisor pattern.
-
-    Args:
-        strategy_id: Strategy ID to bind to builder and verify tools.
-    """
-    # Load prompt from LangSmith (includes model configuration)
-    chain = await load_prompt("supervisor", include_model=True)
-
-    # Extract model and prompt from RunnableSequence
-    prompt_template, model = extract_prompt_and_model(chain)
-
-    # Extract system prompt from ChatPromptTemplate - use as-is from LangSmith
-    system_prompt = extract_system_prompt(prompt_template)
-
-    # Create bound tools with strategy_id pre-filled
-    # The agent will only see request/user_request parameters, not strategy_id
-    bound_builder = create_builder_tool(strategy_id)
-    bound_verify = create_verify_tool(strategy_id)
-
-    tools = [bound_builder, bound_verify]
-
-    # Create agent with model and system prompt from LangSmith (no modifications)
-    agent = create_agent(model, tools=tools, system_prompt=system_prompt)
-
-    return agent
-
-
 async def supervisor_node(state: GraphState) -> GraphState:
     """Supervisor agent node - coordinates builder and verify to build strategies.
 
@@ -131,39 +94,38 @@ async def supervisor_node(state: GraphState) -> GraphState:
     The supervisor prompt from LangSmith sets the agent's role via system prompt.
     The agent reads all messages from state to understand the conversation context.
     """
-    # Construct user_request from state for verify tool context
-    # This includes all conversation context including hidden messages
-    user_request = _construct_user_request(state)
+    # Validate required state
+    is_valid, error_state = validate_state(state, ["strategy_id"])
+    if not is_valid:
+        return error_state
 
-    # Get strategy_id from state - required for builder and verify tools
     strategy_id = state.get("strategy_id")
-    if not strategy_id:
-        logger.error("No strategy_id in state. Supervisor cannot proceed without a strategy.")
+
+    def input_transformer(state: GraphState) -> dict:
+        """Transform state to include user_request for verify tool."""
+        user_request = _construct_user_request(state)
+        messages = state.get("messages", [])
         return {
-            "state": "Error",
-            "messages": state.get("messages", []),
+            "messages": messages,
+            "user_request": user_request,
         }
 
-    # Create agent fresh on each invocation with bound tools
-    # The system prompt from LangSmith sets the supervisor's role (used as-is, no modifications)
-    # strategy_id is bound to tools, so agent doesn't need to pass it
-    agent = await _create_supervisor_agent(strategy_id=strategy_id)
-
-    # Get messages from state - these contain the full conversation history
-    messages = state.get("messages", [])
-
-    # Invoke with messages and user_request
-    # strategy_id is already bound to tools, so no need to include it in messages
-    result = await agent.ainvoke(
-        {
-            "messages": messages,  # Full conversation history
-            "user_request": user_request,  # Available for verify tool
+    def output_transformer(original_state: GraphState, result: dict) -> GraphState:
+        """Preserve strategy_id in result."""
+        return {
+            **result,
+            "strategy_id": strategy_id,
         }
+
+    # Create bound tools with strategy_id pre-filled
+    bound_builder = create_builder_tool(strategy_id)
+    bound_verify = create_verify_tool(strategy_id)
+
+    config = AgentConfig(
+        prompt_name="supervisor",
+        custom_tools=[bound_builder, bound_verify],
     )
 
-    # Preserve strategy_id in the result (agent result might not include it)
-    # Don't update state here - let finalize node handle it
-    return {
-        **result,
-        "strategy_id": strategy_id,  # Preserve strategy_id from state
-    }
+    return await invoke_agent_node(
+        state, config, input_transformer=input_transformer, output_transformer=output_transformer
+    )

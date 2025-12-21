@@ -2,19 +2,13 @@
 
 import logging
 
-from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 
 from src.graph.models import BuilderResult
-from src.graph.prompts import (
-    extract_prompt_and_model,
-    extract_system_prompt,
-    load_prompt,
-)
-from src.graph.tools.mcp_tools import get_mcp_tools
+from src.graph.nodes.base import AgentConfig, create_agent_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -58,33 +52,12 @@ async def _create_builder_agent():
     The agent is configured to handle tool errors internally, allowing it to recover
     from errors like ARCHETYPE_NOT_FOUND and retry with different approaches.
     """
-    # Load prompt from LangSmith
-    chain = await load_prompt("builder", include_model=True)
-    prompt_template, model = extract_prompt_and_model(chain)
-    system_prompt = extract_system_prompt(prompt_template)
-
-    # Load all MCP tools except compile_strategy and create_strategy
-    all_tools = await get_mcp_tools()
-    builder_tools = [
-        t
-        for t in all_tools
-        if t.name not in ["compile_strategy", "validate_strategy", "create_strategy"]
-    ]
-
-    if not builder_tools:
-        logger.warning("No MCP tools loaded for builder agent.")
-
-    # Create agent with tool error handling middleware
-    # This allows the agent to see tool errors in its ReAct loop and decide what to do
-    # Tool errors like ARCHETYPE_NOT_FOUND will be returned as ToolMessage with
-    # error_code and recovery_hint, allowing the agent to retry or handle them
-    agent = create_agent(
-        model,
-        tools=builder_tools,
-        system_prompt=system_prompt,
+    config = AgentConfig(
+        prompt_name="builder",
+        excluded_tools=["compile_strategy", "validate_strategy", "create_strategy"],
         middleware=[handle_tool_errors],
     )
-    return agent
+    return await create_agent_from_config(config)
 
 
 async def _create_verify_agent():
@@ -92,30 +65,17 @@ async def _create_verify_agent():
 
     Verify has access to all read tools and compile_strategy.
     """
-    # Load prompt from LangSmith
-    chain = await load_prompt("verify", include_model=True)
-    prompt_template, model = extract_prompt_and_model(chain)
-    system_prompt = extract_system_prompt(prompt_template)
-
-    # Read tools: get_archetypes, get_archetype_schema, get_schema_example
-    # Plus compile_strategy
-    verify_tools = await get_mcp_tools(
-        allowed_tools=[
+    config = AgentConfig(
+        prompt_name="verify",
+        tools=[
             "get_archetypes",
             "get_archetype_schema",
             "get_schema_example",
             "compile_strategy",
-        ]
+        ],
+        middleware=[handle_tool_errors],
     )
-
-    if not verify_tools:
-        logger.warning("No MCP tools loaded for verify agent.")
-
-    # Create agent with tool error handling middleware for consistency
-    agent = create_agent(
-        model, tools=verify_tools, system_prompt=system_prompt, middleware=[handle_tool_errors]
-    )
-    return agent
+    return await create_agent_from_config(config)
 
 
 @tool
@@ -213,8 +173,6 @@ def create_builder_tool(strategy_id: str):
         return await builder.ainvoke({"request": conversation_context, "strategy_id": strategy_id})
 
     # Create a tool from the wrapper function
-    from langchain.tools import tool
-
     return tool(builder_with_strategy)
 
 
@@ -244,40 +202,14 @@ async def verify(user_request: str, strategy_id: str) -> str:
     Returns:
         The verify agent's response with compilation results or validation status.
     """
-    # Load verify prompt and create agent
-    chain = await load_prompt("verify", include_model=True)
-    prompt_template, model = extract_prompt_and_model(chain)
-    system_prompt = extract_system_prompt(prompt_template)
+    # Use the existing _create_verify_agent function
+    agent = await _create_verify_agent()
 
-    # Load verify tools
-    verify_tools = await get_mcp_tools(
-        allowed_tools=[
-            "get_archetypes",
-            "get_archetype_schema",
-            "get_schema_example",
-            "compile_strategy",
-        ]
-    )
+    # Format the request with strategy_id context (consistent with builder pattern)
+    request_with_context = f"Strategy ID: {strategy_id}\n\nUser Request:\n{user_request}"
 
-    if not verify_tools:
-        logger.warning("No MCP tools loaded for verify agent.")
-
-    # Create agent with prompt from LangSmith and tool error handling middleware
-    agent = create_agent(
-        model, tools=verify_tools, system_prompt=system_prompt, middleware=[handle_tool_errors]
-    )
-
-    # Format the prompt template with required parameters
-    # The verify prompt should have {user_request} and {strategy_id} placeholders
-    prompt_value = await prompt_template.ainvoke(
-        {"user_request": user_request, "strategy_id": strategy_id}
-    )
-
-    # Convert ChatPromptValue to list of messages
-    formatted_messages = prompt_value.to_messages()
-
-    # Invoke agent with formatted messages from the prompt template
-    result = await agent.ainvoke({"messages": formatted_messages})
+    # Invoke agent with simple message (consistent with builder)
+    result = await agent.ainvoke({"messages": [HumanMessage(content=request_with_context)]})
 
     # Return the last message from the verify agent
     messages = result.get("messages", [])
@@ -320,6 +252,4 @@ def create_verify_tool(strategy_id: str):
         return await verify.ainvoke({"user_request": user_request, "strategy_id": strategy_id})
 
     # Create a tool from the wrapper function
-    from langchain.tools import tool
-
     return tool(verify_with_strategy)
