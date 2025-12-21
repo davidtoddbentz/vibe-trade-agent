@@ -138,18 +138,9 @@ def _create_bound_tool(tool_func, param_name: str, strategy_id: str):
     async def bound_tool_func(request: str) -> str:
         """Bound tool wrapper - strategy_id is automatically provided."""
         # tool_func is a StructuredTool created with @tool decorator
-        # We need to call the underlying function, not the tool's ainvoke
-        # Access the underlying function from the tool
-        if hasattr(tool_func, "func"):
-            # StructuredTool has a .func attribute with the underlying function
-            underlying_func = tool_func.func
-            result = await underlying_func(**{param_name: request, "strategy_id": strategy_id})
-        elif hasattr(tool_func, "ainvoke"):
-            # Fallback: use ainvoke if func not available
-            result = await tool_func.ainvoke({param_name: request, "strategy_id": strategy_id})
-        else:
-            # Last resort: call directly
-            result = await tool_func({param_name: request, "strategy_id": strategy_id})
+        # Use ainvoke() which is the proper async method for StructuredTool
+        # Pass the parameters as a dict
+        result = await tool_func.ainvoke({param_name: request, "strategy_id": strategy_id})
         return result
     
     # Set name and docstring before creating tool
