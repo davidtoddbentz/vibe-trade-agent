@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.graph.config import AgentConfig
 from src.graph.models import StrategyUISummary
+from src.graph.nodes.base import create_llm_with_prompt
 from src.graph.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -199,8 +200,6 @@ async def _map_archetypes_to_ui(
         return []
 
     try:
-        from src.graph.nodes.base import create_llm_with_prompt
-
         # Create LLM with structured output
         prompt_template, structured_llm = await create_llm_with_prompt(
             "ui_summary", UIArchetypesResponse

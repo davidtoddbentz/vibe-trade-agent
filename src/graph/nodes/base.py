@@ -4,7 +4,6 @@ import logging
 from typing import Any, Callable, TypeVar
 
 from langchain.agents import create_agent
-from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 
 from src.graph.prompts import (
