@@ -5,7 +5,7 @@ import logging
 from langchain.agents.middleware import wrap_tool_call
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import ToolException
+from langchain_core.tools import StructuredTool, ToolException
 
 from src.graph.models import BuilderResult
 from src.graph.nodes.base import AgentConfig, create_agent_from_config
@@ -114,27 +114,39 @@ async def builder(request: str, strategy_id: str) -> str:
 
 def _create_bound_tool(tool_func, param_name: str, strategy_id: str):
     """Create a tool with strategy_id bound to a specific parameter."""
-    # Get docstring from original tool function for better description
-    original_doc = None
-    if hasattr(tool_func, "func"):
-        original_doc = tool_func.func.__doc__
+    # Get name and description from original tool
+    tool_name = tool_func.name if hasattr(tool_func, "name") else "bound_tool"
+    tool_description = None
+    
+    if hasattr(tool_func, "description"):
+        tool_description = tool_func.description
+    elif hasattr(tool_func, "func") and hasattr(tool_func.func, "__doc__"):
+        tool_description = tool_func.func.__doc__
     elif hasattr(tool_func, "__doc__"):
-        original_doc = tool_func.__doc__
+        tool_description = tool_func.__doc__
     
     # Create a descriptive docstring
-    if original_doc:
+    if tool_description:
         # Extract the main description (first paragraph)
-        doc_lines = original_doc.strip().split("\n")
+        doc_lines = tool_description.strip().split("\n")
         main_desc = doc_lines[0] if doc_lines else "Tool with strategy_id automatically provided."
         docstring = f"{main_desc}\n\nThe strategy_id is automatically provided and not shown to the agent."
     else:
         docstring = f"Tool with strategy_id automatically provided.\n\nArgs:\n    {param_name}: The request parameter.\n\nReturns:\n    Tool result."
     
-    async def bound_tool(request: str) -> str:
+    async def bound_tool_func(request: str) -> str:
+        """Bound tool wrapper - strategy_id is automatically provided."""
         return await tool_func.ainvoke({param_name: request, "strategy_id": strategy_id})
     
-    bound_tool.__doc__ = docstring
-    return tool(bound_tool)
+    bound_tool_func.__name__ = tool_name
+    bound_tool_func.__doc__ = docstring
+    
+    # Create tool using StructuredTool directly to ensure proper name and description
+    return StructuredTool.from_function(
+        func=bound_tool_func,
+        name=tool_name,
+        description=docstring,
+    )
 
 
 def create_builder_tool(strategy_id: str):
