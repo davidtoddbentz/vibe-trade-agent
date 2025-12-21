@@ -1,9 +1,13 @@
-.PHONY: install run test lint format format-check check clean \
+.PHONY: install locally run test lint format format-check check clean \
 	docker-build docker-push docker-build-push deploy deploy-image force-revision
 
 # Install dependencies
 install:
 	uv sync --all-groups
+
+# Setup for local development: install deps, fix linting, and format code
+locally: install lint-fix format
+	@echo "✅ Local setup complete!"
 
 # Run the LangGraph agent server
 run:
@@ -23,12 +27,14 @@ run:
 	uv run langgraph dev'
 
 # Run tests
+# Uses LANGGRAPH_API_KEY from env if set, otherwise uses 'test-key'
 test:
-	uv run pytest tests/ -v
+	@LANGGRAPH_API_KEY=$${LANGGRAPH_API_KEY:-test-key} uv run pytest tests/ -v
 
 # Run tests with coverage
+# Uses LANGGRAPH_API_KEY from env if set, otherwise uses 'test-key'
 test-cov:
-	uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=60
+	@LANGGRAPH_API_KEY=$${LANGGRAPH_API_KEY:-test-key} uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=60
 
 # Lint code
 lint:
