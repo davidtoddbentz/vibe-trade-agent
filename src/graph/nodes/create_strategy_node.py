@@ -2,6 +2,8 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from src.graph.models import StrategyCreateInput
 from src.graph.prompts import extract_prompt_and_model, load_prompt
 from src.graph.state import GraphState
@@ -10,7 +12,9 @@ from src.graph.tools.mcp_tools import extract_mcp_tool_result, get_mcp_tools
 logger = logging.getLogger(__name__)
 
 
-async def create_strategy_node(state: GraphState) -> GraphState:
+async def create_strategy_node(
+    state: GraphState, config: RunnableConfig | None = None
+) -> GraphState:
     """Create strategy node - uses LLM to generate params and calls tool directly."""
     # Check if strategy_id already exists - if so, skip creation
     existing_strategy_id = state.get("strategy_id")
@@ -20,6 +24,23 @@ async def create_strategy_node(state: GraphState) -> GraphState:
             "strategy_id": existing_strategy_id,
             "state": "Answer",
         }
+
+    # Get thread_id from LangGraph config (checkpoint system)
+    # RunnableConfig is dict-like, access via config["configurable"]["thread_id"]
+    thread_id = None
+    if config:
+        try:
+            # RunnableConfig is dict-like, access configurable as a dict key
+            configurable = config.get("configurable", {})
+            if configurable:
+                thread_id = configurable.get("thread_id")
+                logger.info(f"Extracted thread_id from config: {thread_id}")
+            else:
+                logger.warning("Config has no 'configurable' key")
+        except Exception as e:
+            logger.warning(f"Error extracting thread_id from config: {e}, config: {config}")
+    else:
+        logger.warning("No config received, thread_id will be None")
 
     # Load prompt and model from LangSmith
     chain = await load_prompt("strategy_create", include_model=True)
@@ -38,7 +59,7 @@ async def create_strategy_node(state: GraphState) -> GraphState:
     strategy_input: StrategyCreateInput = await structured_llm.ainvoke(formatted_messages)
 
     logger.info(
-        f"Generated strategy params: name={strategy_input.name}, universe={strategy_input.universe}"
+        f"Generated strategy params: name={strategy_input.name}, universe={strategy_input.universe}, thread_id={thread_id}"
     )
 
     # Call the MCP tool directly
@@ -53,12 +74,16 @@ async def create_strategy_node(state: GraphState) -> GraphState:
     create_strategy_tool = tools[0]
 
     # Call the tool with the generated parameters
-    tool_result = await create_strategy_tool.ainvoke(
-        {
-            "name": strategy_input.name,
-            "universe": strategy_input.universe,
-        }
-    )
+    tool_params = {
+        "name": strategy_input.name,
+        "universe": strategy_input.universe,
+    }
+    # Add thread_id if available
+    if thread_id:
+        tool_params["thread_id"] = thread_id
+        logger.info(f"Passing thread_id={thread_id} to create_strategy tool")
+
+    tool_result = await create_strategy_tool.ainvoke(tool_params)
 
     # Extract result - MCP server returns CreateStrategyResponse (Pydantic model)
     # but langchain-mcp-adapters may serialize it in different formats
@@ -83,10 +108,13 @@ async def create_strategy_node(state: GraphState) -> GraphState:
             "messages": messages,
         }
 
-    logger.info(f"Created strategy: {strategy_input.name} (ID: {strategy_id})")
+    logger.info(
+        f"Created strategy: {strategy_input.name} (ID: {strategy_id}, thread_id: {thread_id})"
+    )
 
     return {
         "strategy_id": strategy_id,
+        "thread_id": thread_id,  # Preserve thread_id in state for downstream nodes
         "messages": messages,
         "state": "Answer",
     }
