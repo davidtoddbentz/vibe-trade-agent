@@ -65,4 +65,3 @@ def extract_user_id_from_config(config: RunnableConfig | None) -> str | None:
             return user_id
 
     return None
-

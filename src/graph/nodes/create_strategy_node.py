@@ -48,7 +48,9 @@ async def create_strategy_node(
     if user_id:
         logger.info(f"Extracted user_id from config: {user_id}")
     else:
-        logger.info("No user_id found in config (user not authenticated - strategy will be unowned)")
+        logger.info(
+            "No user_id found in config (user not authenticated - strategy will be unowned)"
+        )
 
     # Load prompt and model from LangSmith
     chain = await load_prompt("strategy_create", include_model=True)

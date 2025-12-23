@@ -57,4 +57,3 @@ def extract_user_id_from_token(token: str | None) -> str | None:
     except Exception as e:
         logger.warning(f"Failed to verify Firebase token: {e}")
         return None
-
