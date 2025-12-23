@@ -1,7 +1,6 @@
 """Firebase authentication utilities for extracting user ID from tokens."""
 
 import logging
-from typing import Optional
 
 try:
     import firebase_admin
@@ -32,7 +31,7 @@ def _ensure_firebase_initialized():
         logger.warning(f"Failed to initialize Firebase Admin SDK: {e}")
 
 
-def extract_user_id_from_token(token: Optional[str]) -> Optional[str]:
+def extract_user_id_from_token(token: str | None) -> str | None:
     """Extract user ID (Firebase UID) from Firebase ID token.
 
     Args:

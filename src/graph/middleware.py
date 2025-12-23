@@ -1,7 +1,6 @@
 """LangGraph middleware to extract user ID from request headers."""
 
 import logging
-from typing import Any, Optional
 
 from langchain_core.runnables import RunnableConfig
 
@@ -10,7 +9,7 @@ from .auth import extract_user_id_from_token
 logger = logging.getLogger(__name__)
 
 
-def extract_user_id_from_config(config: Optional[RunnableConfig]) -> Optional[str]:
+def extract_user_id_from_config(config: RunnableConfig | None) -> str | None:
     """Extract user_id from LangGraph config/metadata.
 
     LangGraph Server may pass request metadata through config.
