@@ -4,6 +4,7 @@ import logging
 
 from langchain_core.runnables import RunnableConfig
 
+from src.graph.middleware import extract_user_id_from_config
 from src.graph.models import StrategyCreateInput
 from src.graph.prompts import extract_prompt_and_model, load_prompt
 from src.graph.state import GraphState
@@ -41,6 +42,15 @@ async def create_strategy_node(
             logger.warning(f"Error extracting thread_id from config: {e}, config: {config}")
     else:
         logger.warning("No config received, thread_id will be None")
+
+    # Extract user_id from config (from Firebase token in request headers or explicit config)
+    user_id = extract_user_id_from_config(config)
+    if user_id:
+        logger.info(f"Extracted user_id from config: {user_id}")
+    else:
+        logger.info(
+            "No user_id found in config (user not authenticated - strategy will be unowned)"
+        )
 
     # Load prompt and model from LangSmith
     chain = await load_prompt("strategy_create", include_model=True)
@@ -82,6 +92,10 @@ async def create_strategy_node(
     if thread_id:
         tool_params["thread_id"] = thread_id
         logger.info(f"Passing thread_id={thread_id} to create_strategy tool")
+    # Add owner_id if user is authenticated
+    if user_id:
+        tool_params["owner_id"] = user_id
+        logger.info(f"Passing owner_id={user_id} to create_strategy tool")
 
     tool_result = await create_strategy_tool.ainvoke(tool_params)
 
@@ -109,7 +123,7 @@ async def create_strategy_node(
         }
 
     logger.info(
-        f"Created strategy: {strategy_input.name} (ID: {strategy_id}, thread_id: {thread_id})"
+        f"Created strategy: {strategy_input.name} (ID: {strategy_id}, thread_id: {thread_id}, owner_id: {user_id})"
     )
 
     return {
