@@ -10,20 +10,20 @@ import logging
 # like langchain-openai's ChatOpenAI.
 try:
     import langchain_core.load
-    
+
     # Store the original loads function
     _original_loads = langchain_core.load.loads
-    
+
     def _patched_loads(data: str, *, allowed_objects=None, **kwargs):
         """Patched loads that defaults to 'all' if not specified.
-        
+
         This allows deserialization of ChatOpenAI and other trusted partner
         integrations when LangSmith pulls prompts with model configurations.
         """
         if allowed_objects is None:
             allowed_objects = 'all'
         return _original_loads(data, allowed_objects=allowed_objects, **kwargs)
-    
+
     # Replace the loads function in the module
     langchain_core.load.loads = _patched_loads
 except Exception as e:
@@ -32,7 +32,8 @@ except Exception as e:
     import warnings
     warnings.warn(
         f"Could not configure LangChain deserialization: {e}. "
-        "You may encounter deserialization errors when loading prompts with models."
+        "You may encounter deserialization errors when loading prompts with models.",
+        stacklevel=2,
     )
 
 from langsmith.async_client import AsyncClient
