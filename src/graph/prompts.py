@@ -21,7 +21,7 @@ try:
         integrations when LangSmith pulls prompts with model configurations.
         """
         if allowed_objects is None:
-            allowed_objects = 'all'
+            allowed_objects = "all"
         return _original_loads(data, allowed_objects=allowed_objects, **kwargs)
 
     # Replace the loads function in the module
@@ -30,6 +30,7 @@ except Exception as e:
     # If patching fails, log a warning but don't fail
     # The error will surface when deserialization actually happens
     import warnings
+
     warnings.warn(
         f"Could not configure LangChain deserialization: {e}. "
         "You may encounter deserialization errors when loading prompts with models.",
